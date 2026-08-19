@@ -1,0 +1,500 @@
+/* --- Custom Cybersec Dark Console Theme --- */
+
+:root {
+  --bg-primary: #0a0c10;
+  --bg-secondary: #12161f;
+  --bg-tertiary: #19202c;
+  --card-bg: rgba(18, 22, 31, 0.65);
+  
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-active: rgba(255, 255, 255, 0.16);
+  
+  --color-text-main: #f3f4f6;
+  --color-text-muted: #9ca3af;
+  --color-text-dark: #6b7280;
+  
+  --color-accent-red: #ef4444;      /* Scam Alert / Threat */
+  --color-accent-red-glow: rgba(239, 68, 68, 0.15);
+  --color-accent-green: #10b981;    /* Whitelist / Confirmed Safe */
+  --color-accent-green-glow: rgba(16, 185, 129, 0.15);
+  --color-accent-blue: #3b82f6;     /* Honeypot System */
+  --color-accent-blue-glow: rgba(59, 130, 246, 0.15);
+  --color-accent-yellow: #f59e0b;   /* Suspicious turn */
+  
+  --font-ui: 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --glass-blur: blur(12px);
+}
+
+/* Reset and Core Layout */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--color-text-main);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  overflow: hidden;
+  height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Layout Grid */
+.console-container {
+  display: grid;
+  grid-template-columns: 350px 1fr;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-dark);
+}
+
+/* Left Sidebar (Scammers List / Alerts Feed) */
+.sidebar {
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.security-dot-active {
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-accent-green);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--color-accent-green);
+  display: inline-block;
+}
+
+.sidebar-header p {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+  font-family: var(--font-mono);
+}
+
+.alerts-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* Custom Threat List Cards */
+.threat-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  backdrop-filter: var(--glass-blur);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  position: relative;
+  overflow: hidden;
+}
+
+.threat-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--color-text-dark);
+  transition: var(--transition-smooth);
+}
+
+.threat-card.scam::before {
+  background-color: var(--color-accent-red);
+}
+
+.threat-card.active {
+  border-color: var(--border-active);
+  background-color: var(--bg-tertiary);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.threat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-active);
+}
+
+.threat-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.threat-name {
+  font-size: 15px;
+  font-weight: 550;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.threat-badge {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.threat-badge.scam {
+  background-color: var(--color-accent-red-glow);
+  color: var(--color-accent-red);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.threat-badge.suspect {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: var(--color-accent-yellow);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.threat-meta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.threat-time {
+  font-size: 11px;
+  color: var(--color-text-dark);
+  margin-top: 8px;
+  text-align: right;
+}
+
+/* Main Display Dashboard */
+.main-dashboard {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Top Console Bar */
+.console-bar {
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 20px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.console-bar h2 {
+  font-size: 16px;
+  font-family: var(--font-mono);
+  color: var(--color-text-main);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-status {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Panel Layout: Left=Extracted Intel, Right=Chat Log */
+.dashboard-workspace {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  overflow: hidden;
+  height: 100%;
+}
+
+.intel-panel {
+  padding: 32px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.chat-panel {
+  background-color: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Cards Design */
+.panel-section-title {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--color-text-dark);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+.intel-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.intel-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 20px;
+  transition: var(--transition-smooth);
+}
+
+.intel-card:hover {
+  border-color: var(--border-active);
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Monospaced threat tags */
+.threat-tag {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+.threat-tag.danger {
+  color: var(--color-accent-red);
+  background-color: var(--color-accent-red-glow);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.threat-tag.info {
+  color: var(--color-accent-blue);
+  background-color: var(--color-accent-blue-glow);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.link-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.link-item a {
+  color: var(--color-accent-blue);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
+}
+
+.link-item a:hover {
+  text-decoration: underline;
+}
+
+.link-domain {
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Chat Transcript Bubble Log */
+.chat-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-muted);
+  background-color: var(--bg-secondary);
+  display: flex;
+  justify-content: space-between;
+}
+
+.chat-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chat-bubble-container {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+}
+
+.chat-bubble-container.attacker {
+  align-self: flex-start;
+}
+
+.chat-bubble-container.honeypot {
+  align-self: flex-end;
+}
+
+.chat-sender-label {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+
+.chat-bubble-container.honeypot .chat-sender-label {
+  text-align: right;
+}
+
+.chat-bubble {
+  padding: 12px 16px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.chat-bubble-container.attacker .chat-bubble {
+  background-color: var(--bg-secondary);
+  color: var(--color-text-main);
+  border: 1px solid var(--border-color);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-bubble-container.honeypot .chat-bubble {
+  background-color: var(--color-accent-blue-glow);
+  color: var(--color-text-main);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-bottom-right-radius: 4px;
+}
+
+.chat-bubble-meta {
+  font-size: 10px;
+  color: var(--color-text-dark);
+  font-family: var(--font-mono);
+  margin-top: 4px;
+  text-align: right;
+  padding: 0 4px;
+}
+
+/* Empty Placeholder States */
+.empty-placeholder {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: var(--color-text-dark);
+  font-family: var(--font-mono);
+  text-align: center;
+  padding: 40px;
+}
+
+.empty-placeholder svg {
+  margin-bottom: 16px;
+  stroke: var(--color-text-dark);
+}
+
+/* Quick Metrics Row */
+.metrics-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.metric-box {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+}
+
+.metric-value {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--color-text-main);
+}
+
+.metric-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+
+.metric-value.danger {
+  color: var(--color-accent-red);
+}
+.metric-value.info {
+  color: var(--color-accent-blue);
+}

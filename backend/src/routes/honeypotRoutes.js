@@ -1,5 +1,11 @@
 import express from 'express';
-import { handleIncomingMessage, addKnownContact, getRecentAlerts } from '../controllers/honeypotController.js';
+import { 
+  handleIncomingMessage, 
+  addKnownContact, 
+  getRecentAlerts, 
+  getAllConversations, 
+  getConversationById 
+} from '../controllers/honeypotController.js';
 
 const router = express.Router();
 
@@ -11,5 +17,11 @@ router.post('/whitelist', addKnownContact);
 
 // Route to fetch recent alerts / flagged attacker profiles
 router.get('/alerts', getRecentAlerts);
+
+// Route to fetch all conversations list
+router.get('/conversations', getAllConversations);
+
+// Route to fetch a single conversation by chatId
+router.get('/conversations/:chatId', getConversationById);
 
 export default router;

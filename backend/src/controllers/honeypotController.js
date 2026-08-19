@@ -237,3 +237,39 @@ export const addKnownContact = async (req, res) => {
     });
   }
 };
+
+/**
+ * Retrieves all conversation records.
+ * GET /api/honeypot/conversations
+ */
+export const getAllConversations = async (req, res) => {
+  try {
+    const conversations = await Conversation.find().sort({ updatedAt: -1 });
+    return res.status(200).json(conversations);
+  } catch (error) {
+    console.error('Error in getAllConversations controller:', error);
+    return res.status(500).json({
+      error: 'An internal server error occurred while fetching conversations.'
+    });
+  }
+};
+
+/**
+ * Retrieves a single conversation by chatId.
+ * GET /api/honeypot/conversations/:chatId
+ */
+export const getConversationById = async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const conversation = await Conversation.findOne({ chatId });
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found.' });
+    }
+    return res.status(200).json(conversation);
+  } catch (error) {
+    console.error('Error in getConversationById controller:', error);
+    return res.status(500).json({
+      error: 'An internal server error occurred while fetching the conversation.'
+    });
+  }
+};
