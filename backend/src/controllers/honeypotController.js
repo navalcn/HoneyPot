@@ -1,5 +1,6 @@
 import Conversation from '../models/Conversation.js';
 import KnownContact from '../models/KnownContact.js';
+import { runHoneypotAgent } from '../../../agent/src/graph.js';
 
 /**
  * Handles incoming messages from Telegram (routed via n8n).
@@ -29,6 +30,15 @@ export const handleIncomingMessage = async (req, res) => {
 
     // 3. Retrieve existing conversation or initialize a new one
     let conversation = await Conversation.findOne({ chatId });
+    if (conversation && conversation.isConversationEnded) {
+      console.log(`Conversation ${chatId} has already ended. Disengaging.`);
+      return res.status(200).json({
+        isKnownContact: false,
+        reply: "Margaret is no longer responding.",
+        endConversation: true
+      });
+    }
+
     if (!conversation) {
       conversation = new Conversation({
         chatId,
@@ -39,38 +49,46 @@ export const handleIncomingMessage = async (req, res) => {
       console.log(`Starting new honeypot conversation session for chatId: ${chatId}`);
     }
 
-    // 4. Append attacker's turn
+    // 4. Append attacker's turn to database schema first so it's included in agent analysis
     conversation.turns.push({
       role: 'attacker',
       text,
       timestamp: receivedAt ? new Date(receivedAt) : new Date()
     });
 
-    // 5. Generate hardcoded honeypot response (no AI integrated in Phase B yet)
-    const mockReply = "Hello! This is a simulated honeypot reply. We will engage further soon.";
-    
-    // Append honeypot's turn
+    // 5. Invoke LangGraph Agent to handle the multi-turn logic (scoring, reply, and routing)
+    const agentResult = await runHoneypotAgent({
+      chatId,
+      turns: conversation.turns
+    });
+
+    // 6. Append honeypot's response turn
     conversation.turns.push({
       role: 'honeypot',
-      text: mockReply,
+      text: agentResult.reply,
       timestamp: new Date()
     });
 
-    // 6. Persist conversation history in MongoDB
-    await conversation.save();
-    console.log(`Successfully logged turns and saved conversation for chatId: ${chatId}`);
+    // 7. Update conversation state based on agent decision
+    conversation.isScam = agentResult.isScam;
+    conversation.confidence = agentResult.confidence;
+    conversation.isConversationEnded = agentResult.isConversationEnded;
 
-    // 7. Respond with reply and conversational status
+    // 8. Persist updated conversation history in MongoDB
+    await conversation.save();
+    console.log(`Successfully logged turns and saved conversation state for chatId: ${chatId}`);
+
+    // 9. Respond with reply and conversational status
     return res.status(200).json({
       isKnownContact: false,
-      reply: mockReply,
-      endConversation: false
+      reply: agentResult.reply,
+      endConversation: agentResult.isConversationEnded
     });
 
   } catch (error) {
     console.error('Error in handleIncomingMessage controller:', error);
     return res.status(500).json({
-      error: 'An internal server error occurred while processing the message.'
+      error: 'An internal server error occurred while processing the agent conversation.'
     });
   }
 };
