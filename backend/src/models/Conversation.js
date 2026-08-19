@@ -16,6 +16,32 @@ const turnSchema = new mongoose.Schema({
   }
 });
 
+const bankAccountSchema = new mongoose.Schema({
+  accountNumber: { type: String, default: '' },
+  ifsc: { type: String, default: '' },
+  bankName: { type: String, default: '' }
+}, { _id: false });
+
+const linkSchema = new mongoose.Schema({
+  url: { type: String, default: '' },
+  domain: { type: String, default: '' },
+  description: { type: String, default: '' }
+}, { _id: false });
+
+const threatIntelligenceSchema = new mongoose.Schema({
+  financialDetails: {
+    upiIds: [{ type: String }],
+    bankAccounts: [bankAccountSchema],
+    cards: [{ type: String }]
+  },
+  links: [linkSchema],
+  attackerIdentifiers: {
+    phoneNumbers: [{ type: String }],
+    aliases: [{ type: String }],
+    handles: [{ type: String }]
+  }
+}, { _id: false });
+
 const conversationSchema = new mongoose.Schema({
   chatId: {
     type: String,
@@ -44,6 +70,14 @@ const conversationSchema = new mongoose.Schema({
   isConversationEnded: {
     type: Boolean,
     default: false
+  },
+  classificationReasoning: {
+    type: String,
+    default: ''
+  },
+  threatIntelligence: {
+    type: threatIntelligenceSchema,
+    default: null
   }
 }, {
   timestamps: true

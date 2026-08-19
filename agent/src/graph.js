@@ -3,6 +3,7 @@ import { SystemMessage, HumanMessage, AIMessage } from "@langchain/core/messages
 import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
 import { z } from "zod";
 import { PERSONA } from "./config/persona.js";
+import { extractAllThreatIntel } from "./utils/extractor.js";
 
 // 1. Define the conversation state schema
 export const AgentState = Annotation.Root({
@@ -40,8 +41,26 @@ export const AgentState = Annotation.Root({
   confidence: Annotation({
     reducer: (x, y) => y ?? x,
     default: () => 0,
+  }),
+  classificationReasoning: Annotation({
+    reducer: (x, y) => y ?? x,
+    default: () => "",
+  }),
+  threatIntelligence: Annotation({
+    reducer: (x, y) => y ?? x,
+    default: () => null,
   })
 });
+
+// Helper to identify human (attacker) messages across plain objects and LangChain classes
+const isHumanMessage = (m) => {
+  if (!m) return false;
+  const role = (m.role || '').toLowerCase();
+  if (role === 'user' || role === 'human' || role === 'attacker') return true;
+  if (typeof m._getType === 'function' && m._getType() === 'human') return true;
+  if (m.constructor?.name === 'HumanMessage') return true;
+  return false;
+};
 
 // Helper to initialize Gemini Chat model
 const getModel = () => {
@@ -50,7 +69,7 @@ const getModel = () => {
     throw new Error("GEMINI_API_KEY environment variable is not defined.");
   }
   return new ChatGoogleGenerativeAI({
-    model: "gemini-3.5-flash",
+    model: "gemini-3.6-flash",
     apiKey: apiKey,
     temperature: 0.7,
   });
@@ -73,8 +92,7 @@ async function scoreTurnNode(state) {
     const formattedMessages = [
       new SystemMessage(PERSONA.scoringPrompt),
       ...state.messages.map(m => {
-        if (m.role === 'user') return new HumanMessage(m.content);
-        return new AIMessage(m.content);
+        return isHumanMessage(m) ? new HumanMessage(m.content) : new AIMessage(m.content);
       })
     ];
 
@@ -89,7 +107,6 @@ async function scoreTurnNode(state) {
     };
   } catch (error) {
     console.error("Error in scoreTurnNode:", error);
-    // Fallback in case of classification API issues
     return {
       scamScore: 3,
       scamReason: "Fallback scoring due to service error."
@@ -105,8 +122,7 @@ async function generateReplyNode(state) {
     const formattedMessages = [
       new SystemMessage(PERSONA.systemPrompt),
       ...state.messages.map(m => {
-        if (m.role === 'user') return new HumanMessage(m.content);
-        return new AIMessage(m.content);
+        return isHumanMessage(m) ? new HumanMessage(m.content) : new AIMessage(m.content);
       })
     ];
 
@@ -127,44 +143,91 @@ async function generateReplyNode(state) {
   }
 }
 
-// 4. Node: Classification (disengagement node)
+// 4. Node: Classification & Intel Extraction (disengagement node)
 async function classificationNode(state) {
   console.log(`Honeypot conversation classification triggered for chatId: ${state.chatId}`);
   
-  const isScam = state.scamScore >= 6;
-  const confidence = isScam ? Math.min(state.scamScore / 10 + 0.1, 0.95) : 0.7;
-
-  // Let the LLM generate a natural, in-character disengagement text
-  let disengagementReply = "";
   try {
     const model = getModel();
-    const disengagementPrompt = isScam
-      ? "Generate a short, final sentence in the character of an elderly grandmother Margaret making an excuse to disengage and consult her computer-savvy grandson, Billy. E.g., 'Oh, my soup is boiling over, let me ask Billy about this and get back to you!'"
-      : "Generate a short, final sentence in the character of an elderly grandmother Margaret politely saying she will have her family handle this chat instead. E.g., 'I will let my daughter handle this chat, thank you!'";
 
-    const response = await model.invoke([
-      new SystemMessage(PERSONA.systemPrompt),
-      new HumanMessage(disengagementPrompt)
-    ]);
-    disengagementReply = response.content;
+    // Schema for final classification
+    const classificationSchema = z.object({
+      isScam: z.boolean().describe("Whether this conversation is verified to be a scam"),
+      confidence: z.number().min(0).max(1).describe("Confidence score of classification from 0 to 1"),
+      reasoning: z.string().describe("Detailed reasoning for this classification based on the transcript")
+    });
+
+    const structuredModel = model.withStructuredOutput(classificationSchema);
+
+    // Build the transcript text
+    const transcriptText = state.messages
+      .map(m => `${isHumanMessage(m) ? 'Attacker' : 'Margaret'}: ${m.content}`)
+      .join('\n');
+
+    const classificationPrompt = [
+      new SystemMessage("You are an expert fraud analyst. Review the full transcript of this conversation between an attacker (who contacted a honeypot) and Margaret (the honeypot persona). Classify whether the attacker is attempting a scam."),
+      new HumanMessage(`Transcript:\n${transcriptText}`)
+    ];
+
+    console.log("Analyzing transcript for final classification...");
+    const result = await structuredModel.invoke(classificationPrompt);
+    console.log(`Classification result -> isScam: ${result.isScam}, Confidence: ${result.confidence}`);
+
+    let threatIntel = null;
+    if (result.isScam) {
+      // Convert messages to turns formatting for the extraction utility
+      const turnsForExtraction = state.messages.map(m => ({
+        role: isHumanMessage(m) ? 'attacker' : 'honeypot',
+        text: m.content
+      }));
+
+      // Extract details in parallel with regex fallbacks
+      threatIntel = await extractAllThreatIntel(turnsForExtraction);
+    }
+
+    // Generate in-character disengagement text
+    let disengagementReply = "";
+    try {
+      const goodbyePrompt = result.isScam
+        ? "Generate a short, final sentence in the character of an elderly grandmother Margaret making an excuse to disengage and consult her computer-savvy grandson, Billy. E.g., 'Oh, my tea is ready, let me ask Billy about this and get back to you!'"
+        : "Generate a short, final sentence in the character of an elderly grandmother Margaret politely saying she will have her family handle this chat instead. E.g., 'I will let my daughter handle this chat, thank you!'";
+
+      const response = await model.invoke([
+        new SystemMessage(PERSONA.systemPrompt),
+        new HumanMessage(goodbyePrompt)
+      ]);
+      disengagementReply = response.content;
+    } catch (error) {
+      disengagementReply = result.isScam
+        ? "Let me ask my grandson Billy about this first, dear. I'll get back to you."
+        : "I'll let my family take over this chat now. Goodbye!";
+    }
+
+    return {
+      isConversationEnded: true,
+      isScam: result.isScam,
+      confidence: result.confidence,
+      classificationReasoning: result.reasoning,
+      threatIntelligence: threatIntel,
+      reply: disengagementReply,
+      messages: [new AIMessage(disengagementReply)]
+    };
+
   } catch (error) {
-    disengagementReply = isScam
-      ? "Let me ask my grandson Billy about this first, dear. I'll get back to you."
-      : "I'll let my family take over this chat now. Goodbye!";
+    console.error("Error in classificationNode:", error);
+    return {
+      isConversationEnded: true,
+      isScam: state.scamScore >= 6,
+      confidence: 0.7,
+      classificationReasoning: "Fallback classification due to system error.",
+      threatIntelligence: null,
+      reply: "Let me ask my grandson Billy about this first, dear. I'll get back to you."
+    };
   }
-
-  return {
-    isConversationEnded: true,
-    isScam,
-    confidence,
-    reply: disengagementReply,
-    messages: [new AIMessage(disengagementReply)]
-  };
 }
 
 // 5. Conditional router edge logic
 function routeConversation(state) {
-  // Check if we hit the hard cap of 15 turns, or if threat level is high
   const maxTurns = 15;
   
   console.log(`Routing evaluation -> Turn Count: ${state.turnCount}/${maxTurns}, Current Turn Scam Score: ${state.scamScore}`);
@@ -201,11 +264,6 @@ const honeypotGraph = graphBuilder.compile();
 
 /**
  * Runner function invoked by the Express controller.
- * Runs the graph to process a new message turn.
- * @param {Object} params Input parameters
- * @param {string} params.chatId Unique identifier for conversation
- * @param {Array} params.turns Full list of existing mongoose turns in format { role, text, timestamp }
- * @returns {Promise<Object>} Agent outputs (reply, scamScore, scamReason, isScam, confidence, isConversationEnded)
  */
 export const runHoneypotAgent = async ({ chatId, turns }) => {
   // Convert db turns into agent-compatible messages format
@@ -214,7 +272,7 @@ export const runHoneypotAgent = async ({ chatId, turns }) => {
     content: t.text
   }));
 
-  // turnCount represents pairs of dialog steps (approximate engagement turns)
+  // turnCount represents pairs of dialog steps
   const turnCount = Math.ceil(turns.length / 2);
 
   const responseState = await honeypotGraph.invoke({
@@ -229,6 +287,8 @@ export const runHoneypotAgent = async ({ chatId, turns }) => {
     scamReason: responseState.scamReason,
     isConversationEnded: responseState.isConversationEnded,
     isScam: responseState.isScam,
-    confidence: responseState.confidence
+    confidence: responseState.confidence,
+    classificationReasoning: responseState.classificationReasoning,
+    threatIntelligence: responseState.threatIntelligence
   };
 };

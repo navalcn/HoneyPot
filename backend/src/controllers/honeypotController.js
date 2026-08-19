@@ -30,12 +30,16 @@ export const handleIncomingMessage = async (req, res) => {
 
     // 3. Retrieve existing conversation or initialize a new one
     let conversation = await Conversation.findOne({ chatId });
+    
     if (conversation && conversation.isConversationEnded) {
       console.log(`Conversation ${chatId} has already ended. Disengaging.`);
       return res.status(200).json({
         isKnownContact: false,
         reply: "Margaret is no longer responding.",
-        endConversation: true
+        endConversation: true,
+        isScam: conversation.isScam,
+        confidence: conversation.confidence,
+        threatIntelligence: conversation.threatIntelligence
       });
     }
 
@@ -49,14 +53,14 @@ export const handleIncomingMessage = async (req, res) => {
       console.log(`Starting new honeypot conversation session for chatId: ${chatId}`);
     }
 
-    // 4. Append attacker's turn to database schema first so it's included in agent analysis
+    // 4. Append attacker's turn to database schema
     conversation.turns.push({
       role: 'attacker',
       text,
       timestamp: receivedAt ? new Date(receivedAt) : new Date()
     });
 
-    // 5. Invoke LangGraph Agent to handle the multi-turn logic (scoring, reply, and routing)
+    // 5. Invoke LangGraph Agent to handle multi-turn scoring, dialogue, and final extraction
     const agentResult = await runHoneypotAgent({
       chatId,
       turns: conversation.turns
@@ -69,10 +73,12 @@ export const handleIncomingMessage = async (req, res) => {
       timestamp: new Date()
     });
 
-    // 7. Update conversation state based on agent decision
+    // 7. Update conversation fields in database
     conversation.isScam = agentResult.isScam;
     conversation.confidence = agentResult.confidence;
     conversation.isConversationEnded = agentResult.isConversationEnded;
+    conversation.classificationReasoning = agentResult.classificationReasoning;
+    conversation.threatIntelligence = agentResult.threatIntelligence;
 
     // 8. Persist updated conversation history in MongoDB
     await conversation.save();
@@ -82,7 +88,11 @@ export const handleIncomingMessage = async (req, res) => {
     return res.status(200).json({
       isKnownContact: false,
       reply: agentResult.reply,
-      endConversation: agentResult.isConversationEnded
+      endConversation: agentResult.isConversationEnded,
+      isScam: agentResult.isScam,
+      confidence: agentResult.confidence,
+      classificationReasoning: agentResult.classificationReasoning,
+      threatIntelligence: agentResult.threatIntelligence
     });
 
   } catch (error) {
