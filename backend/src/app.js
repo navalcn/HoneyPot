@@ -1,7 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import morgan from 'morgan'
+import morgan from 'morgan';
+import honeypotRoutes from './routes/honeypotRoutes.js';
 
 const app = express();
 
@@ -9,6 +10,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
+
+// Routes
+app.use('/api/honeypot', honeypotRoutes);
 
 // Health Check Route
 app.get('/health', (req, res) => {
@@ -21,5 +25,5 @@ app.get('/health', (req, res) => {
   });
 });
 
-
 export default app;
+
