@@ -1,0 +1,226 @@
+{
+  "name": "Honeypot Telegram Routing Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "e9c15d48-6a31-4048-b4b1-e4ad6cf8ef90",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-api-credentials-placeholder",
+          "name": "Telegram Bot Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/honeypot/incoming",
+        "sendHeaders": true,
+        "headersUi": {
+          "parameter": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chatId\": \"{{ $json.message.chat.id.toString() }}\",\n  \"senderId\": \"{{ $json.message.from.id.toString() }}\",\n  \"senderName\": \"{{ $json.message.from.first_name || 'Unknown' }} {{ $json.message.from.last_name || '' }}\",\n  \"text\": \"{{ $json.message.text || '' }}\",\n  \"receivedAt\": \"{{ new Date($json.message.date * 1000).toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "5a4f78de-fb9e-4e4b-a621-13cf2d0e19ad",
+      "name": "Ingest Message (Express API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isKnownContact }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "1db2a3fc-ef29-450f-9a06-a66dbff13e01",
+      "name": "Is Known Contact?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_OPERATOR_TELEGRAM_CHAT_ID",
+        "text": "=Whitelisted User Contact Pass-Through:\nFrom: {{ $node[\"Telegram Trigger\"].json.message.from.first_name }}\nMessage: {{ $node[\"Telegram Trigger\"].json.message.text }}",
+        "additionalFields": {}
+      },
+      "id": "ccab13f4-2f22-4c28-98bc-709de23405c1",
+      "name": "Route to Operator Chat",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        860,
+        180
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-api-credentials-placeholder",
+          "name": "Telegram Bot Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.endConversation }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "f5123d24-81b0-466d-9bcf-ecb01d36be0a",
+      "name": "Is Dialog Active?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        860,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $node[\"Telegram Trigger\"].json.message.chat.id.toString() }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "replyToMessageId": "={{ $node[\"Telegram Trigger\"].json.message.message_id }}"
+        }
+      },
+      "id": "761d47ef-1e24-4fde-b430-80d5bfa780d6",
+      "name": "Send Kamla Devi Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        340
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-api-credentials-placeholder",
+          "name": "Telegram Bot Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $node[\"Telegram Trigger\"].json.message.chat.id.toString() }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "replyToMessageId": "={{ $node[\"Telegram Trigger\"].json.message.message_id }}"
+        }
+      },
+      "id": "4168dafc-30e4-44df-be9e-64d5ba7325b5",
+      "name": "Send Goodbye Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        500
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-api-credentials-placeholder",
+          "name": "Telegram Bot Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Ingest Message (Express API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingest Message (Express API)": {
+      "main": [
+        [
+          {
+            "node": "Is Known Contact?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Known Contact?": {
+      "main": [
+        [
+          {
+            "node": "Route to Operator Chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Dialog Active?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Dialog Active?": {
+      "main": [
+        [
+          {
+            "node": "Send Kamla Devi Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Goodbye Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false,
+  "meta": {
+    "templateId": ""
+  }
+}

@@ -1,7 +1,7 @@
 import Conversation from '../models/Conversation.js';
 import KnownContact from '../models/KnownContact.js';
 import AttackerProfile from '../models/AttackerProfile.js';
-import { runHoneypotAgent } from '../../../agent/src/graph.js';
+import { runHoneypotAgent } from '../../../agent/src/graphMistral.js';
 
 /**
  * Handles incoming messages from Telegram (routed via n8n).

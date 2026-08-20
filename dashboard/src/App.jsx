@@ -265,7 +265,7 @@ export default function App() {
             <div className="chat-panel">
               <div className="chat-header">
                 <span>CONVERSATION LOG (chatId: {selectedAttacker.associatedChats?.[0] || 'N/A'})</span>
-                <span style={{ color: 'var(--color-accent-blue)' }}>Margaret Persona Activated</span>
+                <span style={{ color: 'var(--color-accent-blue)' }}>Kamla Devi Persona Activated</span>
               </div>
 
               <div className="chat-history">
@@ -280,7 +280,7 @@ export default function App() {
                       className={`chat-bubble-container ${turn.role === 'attacker' ? 'attacker' : 'honeypot'}`}
                     >
                       <div className="chat-sender-label">
-                        {turn.role === 'attacker' ? (selectedAttacker.senderName || 'Attacker') : 'Margaret (Honeypot)'}
+                        {turn.role === 'attacker' ? (selectedAttacker.senderName || 'Attacker') : 'Kamla Devi (Honeypot)'}
                       </div>
                       <div className="chat-bubble">
                         {turn.text}

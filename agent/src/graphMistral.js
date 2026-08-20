@@ -1,4 +1,4 @@
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatMistralAI } from "@langchain/mistralai";
 import { SystemMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
 import { z } from "zod";
@@ -62,14 +62,14 @@ const isHumanMessage = (m) => {
   return false;
 };
 
-// Helper to initialize Gemini Chat model
+// Helper to initialize Mistral Chat model
 const getModel = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.MISTRAL_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is not defined.");
+    throw new Error("MISTRAL_API_KEY environment variable is not defined.");
   }
-  return new ChatGoogleGenerativeAI({
-    model: "gemini-2.5-flash",
+  return new ChatMistralAI({
+    model: process.env.MISTRAL_MODEL || "mistral-large-latest",
     apiKey: apiKey,
     temperature: 0.7,
   });
