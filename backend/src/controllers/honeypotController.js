@@ -36,7 +36,7 @@ export const handleIncomingMessage = async (req, res) => {
       console.log(`Conversation ${chatId} has already ended. Disengaging.`);
       return res.status(200).json({
         isKnownContact: false,
-        reply: "Margaret is no longer responding.",
+        reply: "Kamala Devi is no longer responding.",
         endConversation: true,
         isScam: conversation.isScam,
         confidence: conversation.confidence,

@@ -43,7 +43,7 @@ const attackerSchema = z.object({
 });
 
 /**
- * Invokes Gemini structured tool calling to extract financial details
+ * Invokes Mistral structured tool calling to extract financial details
  */
 async function extractFinancialDetails(transcript) {
   try {
@@ -60,7 +60,7 @@ async function extractFinancialDetails(transcript) {
 }
 
 /**
- * Invokes Gemini structured tool calling to extract URLs/Links
+ * Invokes Mistral structured tool calling to extract URLs/Links
  */
 async function extractLinks(transcript) {
   try {
@@ -77,7 +77,7 @@ async function extractLinks(transcript) {
 }
 
 /**
- * Invokes Gemini structured tool calling to extract phone numbers/aliases/handles
+ * Invokes Mistral structured tool calling to extract phone numbers/aliases/handles
  */
 async function extractAttackerIdentifiers(transcript) {
   try {
