@@ -1,15 +1,15 @@
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatMistralAI } from "@langchain/mistralai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
-// Initialize Gemini extraction model (low temperature for consistency)
+// Initialize Mistral extraction model (low temperature for structured consistency)
 const getExtractionModel = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.MISTRAL_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is not defined.");
+    throw new Error("MISTRAL_API_KEY environment variable is not defined.");
   }
-  return new ChatGoogleGenerativeAI({
-    model: "gemini-3.6-flash",
+  return new ChatMistralAI({
+    model: process.env.MISTRAL_MODEL || "mistral-large-latest",
     apiKey: apiKey,
     temperature: 0,
   });
@@ -110,13 +110,13 @@ const getDomain = (urlStr) => {
 };
 
 /**
- * Orchestrates parallel Gemini extraction and applies regex fallbacks/normalizations
+ * Orchestrates parallel Mistral extraction and applies regex fallbacks/normalizations
  * @param {Array} turns Array of conversation turns { role, text }
  * @returns {Promise<Object>} Consolidated, normalized threat intelligence JSON record
  */
 export const extractAllThreatIntel = async (turns) => {
   const transcriptText = turns
-    .map(t => `${t.role === 'attacker' ? 'Attacker' : 'Margaret'}: ${t.text}`)
+    .map(t => `${t.role === 'attacker' ? 'Attacker' : 'Kamla Devi'}: ${t.text}`)
     .join('\n');
 
   console.log("Running parallel threat intelligence extraction...");
