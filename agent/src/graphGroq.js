@@ -93,14 +93,21 @@ async function processTurnNode(state) {
 
 ---
 CRITICAL OPERATIONAL INSTRUCTIONS:
-Evaluate the incoming message for cyber scam / fraud threat level AND generate Kamla Devi's naive, stalling response.
+1. First, evaluate the latest user message in conversation context for scam / fraud risk (0 to 10 scale).
+2. SILENT MODE RULE: If the user's message is merely a generic greeting (e.g., "Hi", "Hello", "Hey", "How are you", "test") with NO scam, NO offer, NO financial request, and NO suspicious intent (scamScore <= 2):
+   - Set "reply": null.
+   - Do NOT generate any greeting or text. Stay silent until they state a purpose.
+3. ENGAGEMENT RULE: If the message contains ANY suspicious proposal, job offer, lottery, bill threat, KYC demand, link, or money request (scamScore >= 3):
+   - Set "reply" to Kamla Devi's naive, stalling response in character.
+4. STRICT NON-REPETITION: Carefully read the transcript history. NEVER repeat the same question or excuse you already sent earlier. React dynamically to the scammer's latest step (e.g., feign opening the app, report a fake payment error to ask for backup UPI/QR, ask about buttons/PIN).
 
 You MUST respond strictly with a valid JSON object matching this schema:
 {
   "scamScore": <number between 0 (safe) and 10 (definite scam)>,
   "scamReason": "<single concise sentence explaining why it is or is not a scam>",
-  "reply": "<Kamla Devi's next naive, confused stalling response in character>"
+  "reply": "<Kamla Devi's stalling response string OR null if purely a neutral greeting>"
 }`;
+
 
     const formattedMessages = [
       { role: "system", content: systemPrompt },
@@ -119,28 +126,33 @@ You MUST respond strictly with a valid JSON object matching this schema:
     const parsed = JSON.parse(rawContent);
     const scamScore = typeof parsed.scamScore === 'number' ? parsed.scamScore : 3;
     const scamReason = parsed.scamReason || "Evaluated conversation indicators.";
-    const reply = parsed.reply || "Beta, my phone screen is flickering. What did you say?";
+    
+    // If score <= 2 or explicitly null, enforce silent mode (reply = null)
+    let reply = parsed.reply;
+    if (scamScore <= 2 || reply === "null" || reply === null || reply === "") {
+      reply = null;
+    }
 
     console.log(`[Groq Turn Result] Score: ${scamScore}/10 | Reason: "${scamReason}"`);
-    console.log(`[Kamla Devi Reply]: "${reply}"`);
+    console.log(`[Kamla Devi Reply]: ${reply ? `"${reply}"` : '(Silent Mode - No reply sent)'}`);
 
     return {
       scamScore,
       scamReason,
       reply,
-      messages: [{ role: 'assistant', content: reply }]
+      messages: reply ? [{ role: 'assistant', content: reply }] : []
     };
   } catch (error) {
     console.error("Error in Groq processTurnNode:", error.message);
-    const fallbackReply = "Oh dear, my phone is acting up again. What did you say, dear?";
     return {
       scamScore: 3,
       scamReason: "Fallback scoring due to service error.",
-      reply: fallbackReply,
-      messages: [{ role: 'assistant', content: fallbackReply }]
+      reply: null,
+      messages: []
     };
   }
 }
+
 
 // 3. Classification & Intel Extraction (triggered on disengagement)
 async function classificationNode(state) {
