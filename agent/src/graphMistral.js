@@ -265,20 +265,21 @@ const honeypotGraph = graphBuilder.compile();
 /**
  * Runner function invoked by the Express controller.
  */
-export const runHoneypotAgent = async ({ chatId, turns }) => {
+export const runHoneypotAgent = async ({ chatId, turns, turnCount }) => {
   // Convert db turns into agent-compatible messages format
   const messages = turns.map(t => ({
     role: t.role === "attacker" ? "user" : "assistant",
     content: t.text
   }));
 
-  // turnCount represents pairs of dialog steps
-  const turnCount = Math.ceil(turns.length / 2);
+  // Use the explicit attacker-turn counter passed from the controller (Issue 3).
+  // Fallback to Math.ceil for safety if called without it (e.g. tests).
+  const resolvedTurnCount = turnCount ?? Math.ceil(turns.length / 2);
 
   const responseState = await honeypotGraph.invoke({
     chatId,
     messages,
-    turnCount,
+    turnCount: resolvedTurnCount,
   });
 
   return {

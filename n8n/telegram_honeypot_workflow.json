@@ -78,6 +78,7 @@
       },
       "id": "ccab13f4-2f22-4c28-98bc-709de23405c1",
       "name": "Route to Operator Chat",
+      "notes": "CONTRACT: The backend returns { isKnownContact: true, reply: null } for whitelisted senders. The `reply` field is ALWAYS null here and MUST NOT be used in any send action. This node reads the original message text directly from the Telegram Trigger node ($node[\"Telegram Trigger\"].json.message.text) and forwards it to the operator's private chat. Never wire `$json.reply` to a Telegram send node on the known-contact branch.",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
       "position": [

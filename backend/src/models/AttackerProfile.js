@@ -1,5 +1,11 @@
 import mongoose from 'mongoose';
 
+// UPI ID entry with confidence tier (Issue 2)
+const upiIdSchema = new mongoose.Schema({
+  id:         { type: String, default: '' },
+  confidence: { type: String, enum: ['high', 'low'], default: 'low' }
+}, { _id: false });
+
 const bankAccountSchema = new mongoose.Schema({
   accountNumber: { type: String, default: '' },
   ifsc: { type: String, default: '' },
@@ -36,7 +42,7 @@ const attackerProfileSchema = new mongoose.Schema({
     default: ''
   },
   financialDetails: {
-    upiIds: [{ type: String }],
+    upiIds: [upiIdSchema],      // { id, confidence: 'high'|'low' }
     bankAccounts: [bankAccountSchema],
     cards: [{ type: String }]
   },

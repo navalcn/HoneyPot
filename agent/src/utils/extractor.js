@@ -1,97 +1,159 @@
-import { ChatMistralAI } from "@langchain/mistralai";
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { z } from "zod";
+// Direct extraction caller using Groq (super fast JSON mode)
+async function callExtractor(messages) {
+  const groqKey = process.env.GROQ_API_KEY;
+  const openRouterKey = process.env.OPEN_ROUTER_API_KEY;
 
-// Initialize Mistral extraction model (low temperature for structured consistency)
-const getExtractionModel = () => {
-  const apiKey = process.env.MISTRAL_API_KEY;
-  if (!apiKey) {
-    throw new Error("MISTRAL_API_KEY environment variable is not defined.");
+  if (groqKey) {
+    const modelToUse = process.env.GROQ_EXTRACT_MODEL || "openai/gpt-oss-20b";
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${groqKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: modelToUse,
+        messages,
+        temperature: 0.1,
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.choices && data.choices.length > 0) {
+        return data.choices[0].message?.content || "{}";
+      }
+    }
   }
-  return new ChatMistralAI({
-    model: process.env.MISTRAL_MODEL || "mistral-large-latest",
-    apiKey: apiKey,
-    temperature: 0,
-  });
-};
 
-// 1. Zod Schema for Financial Details
-const financialSchema = z.object({
-  upiIds: z.array(z.string()).default([]).describe("Unified Payment Interface (UPI) IDs (e.g. payer@bank)"),
-  bankAccounts: z.array(z.object({
-    accountNumber: z.string().describe("Bank account number"),
-    ifsc: z.string().describe("IFSC code (Indian Financial System Code)"),
-    bankName: z.string().default("Unknown").describe("Name of the bank")
-  })).default([]).describe("Bank account details provided by the attacker"),
-  cards: z.array(z.string()).default([]).describe("Credit/Debit card details (numbers, card names)")
-});
+  if (openRouterKey) {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openRouterKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "meta-llama/llama-3.1-8b-instruct",
+        messages,
+        temperature: 0.1
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content || "{}";
+    }
+  }
 
-// 2. Zod Schema for Links
-const linkSchema = z.object({
-  links: z.array(z.object({
-    url: z.string().describe("Full URL"),
-    domain: z.string().describe("Root domain name of the link"),
-    description: z.string().default("").describe("Brief context of what this link is for")
-  })).default([]).describe("Links, web portals, or phishing URLs shared by the attacker")
-});
+  throw new Error("No valid LLM API key found for extraction.");
+}
 
-// 3. Zod Schema for Attacker Identifiers
-const attackerSchema = z.object({
-  phoneNumbers: z.array(z.string()).default([]).describe("Phone numbers shared or mentioned by the attacker"),
-  aliases: z.array(z.string()).default([]).describe("Aliases, names, handles, or display names used by the attacker"),
-  handles: z.array(z.string()).default([]).describe("Social media handles, Telegram handles starting with @, or usernames")
-});
 
 /**
- * Invokes Mistral structured tool calling to extract financial details
+ * Extracts financial details (UPI IDs, Bank accounts, cards) via LLM
  */
 async function extractFinancialDetails(transcript) {
   try {
-    const model = getExtractionModel().withStructuredOutput(financialSchema);
-    const prompt = [
-      new SystemMessage("You are a cybersecurity threat analyst. Analyze the conversation transcript and extract any financial identifiers: UPI IDs, bank accounts (account number, IFSC code, bank name), and credit/debit card details."),
-      new HumanMessage(`Conversation Transcript:\n${transcript}`)
-    ];
-    return await model.invoke(prompt);
+    const raw = await callExtractor([
+      {
+        role: "system",
+        content: `You are a cybersecurity threat analyst. Analyze the conversation transcript and extract financial identifiers: UPI IDs, bank accounts (accountNumber, ifsc, bankName), and credit/debit card numbers.
+Respond ONLY with a valid raw JSON object matching this structure:
+{"upiIds": ["string"], "bankAccounts": [{"accountNumber": "string", "ifsc": "string", "bankName": "string"}], "cards": ["string"]}
+Do not add markdown code blocks.`
+      },
+      {
+        role: "user",
+        content: `Conversation Transcript:\n${transcript}`
+      }
+    ]);
+
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      return {
+        upiIds: Array.isArray(parsed.upiIds) ? parsed.upiIds : [],
+        bankAccounts: Array.isArray(parsed.bankAccounts) ? parsed.bankAccounts : [],
+        cards: Array.isArray(parsed.cards) ? parsed.cards : []
+      };
+    }
+    return { upiIds: [], bankAccounts: [], cards: [] };
   } catch (error) {
-    console.error("Error extracting financial details:", error);
+    console.error("Error extracting financial details:", error.message);
     return { upiIds: [], bankAccounts: [], cards: [] };
   }
 }
 
 /**
- * Invokes Mistral structured tool calling to extract URLs/Links
+ * Extracts URLs/Links via LLM
  */
 async function extractLinks(transcript) {
   try {
-    const model = getExtractionModel().withStructuredOutput(linkSchema);
-    const prompt = [
-      new SystemMessage("You are a cybersecurity threat analyst. Analyze the conversation transcript and extract any URLs, links, or web domains shared by the attacker. Do not extract standard search engines or standard social network domains (like t.me) unless they point to a phishing group."),
-      new HumanMessage(`Conversation Transcript:\n${transcript}`)
-    ];
-    return await model.invoke(prompt);
+    const raw = await callExtractor([
+      {
+        role: "system",
+        content: `You are a cybersecurity threat analyst. Analyze the conversation transcript and extract phishing URLs, links, or scam domains.
+Respond ONLY with a valid raw JSON object:
+{"links": [{"url": "string", "domain": "string", "description": "string"}]}
+Do not add markdown code blocks.`
+      },
+      {
+        role: "user",
+        content: `Conversation Transcript:\n${transcript}`
+      }
+    ]);
+
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      return {
+        links: Array.isArray(parsed.links) ? parsed.links : []
+      };
+    }
+    return { links: [] };
   } catch (error) {
-    console.error("Error extracting links:", error);
+    console.error("Error extracting links:", error.message);
     return { links: [] };
   }
 }
 
 /**
- * Invokes Mistral structured tool calling to extract phone numbers/aliases/handles
+ * Extracts phone numbers/aliases/handles via LLM
  */
 async function extractAttackerIdentifiers(transcript) {
   try {
-    const model = getExtractionModel().withStructuredOutput(attackerSchema);
-    const prompt = [
-      new SystemMessage("You are a cybersecurity threat analyst. Analyze the conversation transcript and extract any attacker identifiers: phone numbers, usernames, aliases, display names, and social media handles (especially Telegram handles starting with @)."),
-      new HumanMessage(`Conversation Transcript:\n${transcript}`)
-    ];
-    return await model.invoke(prompt);
+    const raw = await callExtractor([
+      {
+        role: "system",
+        content: `You are a cybersecurity threat analyst. Analyze the transcript and extract attacker identifiers: phone numbers, aliases/names, and social media handles (starting with @).
+Respond ONLY with a valid raw JSON object:
+{"phoneNumbers": ["string"], "aliases": ["string"], "handles": ["string"]}
+Do not add markdown code blocks.`
+      },
+      {
+        role: "user",
+        content: `Conversation Transcript:\n${transcript}`
+      }
+    ]);
+
+
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      return {
+        phoneNumbers: Array.isArray(parsed.phoneNumbers) ? parsed.phoneNumbers : [],
+        aliases: Array.isArray(parsed.aliases) ? parsed.aliases : [],
+        handles: Array.isArray(parsed.handles) ? parsed.handles : []
+      };
+    }
+    return { phoneNumbers: [], aliases: [], handles: [] };
   } catch (error) {
-    console.error("Error extracting attacker identifiers:", error);
+    console.error("Error extracting attacker identifiers:", error.message);
     return { phoneNumbers: [], aliases: [], handles: [] };
   }
 }
+
 
 /**
  * Helper to parse domains out of raw URLs
@@ -129,7 +191,8 @@ export const extractAllThreatIntel = async (turns) => {
   ]);
 
   // Ensure default structures are safe
-  const upiIds = new Set(financials.upiIds || []);
+  // upiIds from LLM are plain strings — we classify them below
+  const llmUpiStrings = (financials.upiIds || []).map(s => s.toLowerCase().trim());
   const bankAccounts = financials.bankAccounts || [];
   const cards = new Set(financials.cards || []);
   const links = linkData.links || [];
@@ -137,15 +200,39 @@ export const extractAllThreatIntel = async (turns) => {
   const aliases = new Set(identifiers.aliases || []);
   const handles = new Set(identifiers.handles || []);
 
-  // 2. Regex fallbacks (to guarantee we catch pattern matches)
+  // 2. Two-tier UPI regex (Issue 2 fix)
   const rawText = turns.map(t => t.text).join(' ');
 
-  // Regex: UPI ID (e.g. payinguser@okaxis)
-  const upiRegex = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
-  const upiMatches = rawText.match(upiRegex);
-  if (upiMatches) {
-    upiMatches.forEach(match => upiIds.add(match.trim().toLowerCase()));
-  }
+  // Tier-1: known Indian UPI VPA suffixes — high confidence, not emails/URLs
+  const HIGH_CONF_UPI_RE = /[a-zA-Z0-9.\-_]{2,256}@(okaxis|oksbi|okhdfcbank|okicici|ybl|paytm|upi|axl|ibl|apl|hdfcbank|icici)(?=[\s,"'`]|$)/gi;
+  // Tier-2: original loose pattern — catches anything@word, flagged low confidence
+  const LOW_CONF_UPI_RE  = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
+
+  // Map keyed by normalised id; tier-1 wins over tier-2 for the same id
+  const upiMap = new Map();
+
+  // Seed with LLM results — classify by tier-1 test
+  llmUpiStrings.forEach(id => {
+    const confidence = HIGH_CONF_UPI_RE.test(id) ? 'high' : 'low';
+    HIGH_CONF_UPI_RE.lastIndex = 0; // reset stateful regex after .test()
+    upiMap.set(id, { id, confidence });
+  });
+
+  // Apply tier-1 regex against raw text
+  const tier1Matches = rawText.match(HIGH_CONF_UPI_RE) || [];
+  tier1Matches.forEach(match => {
+    const id = match.trim().toLowerCase();
+    upiMap.set(id, { id, confidence: 'high' });
+  });
+
+  // Apply tier-2 regex — only add entries not already captured at high confidence
+  const tier2Matches = rawText.match(LOW_CONF_UPI_RE) || [];
+  tier2Matches.forEach(match => {
+    const id = match.trim().toLowerCase();
+    if (!upiMap.has(id)) {
+      upiMap.set(id, { id, confidence: 'low' });
+    }
+  });
 
   // Regex: URLs
   const urlRegex = /https?:\/\/[^\s\/\?#]+\.[^\s\/\?#]+[^\s]*/gi;
@@ -194,7 +281,8 @@ export const extractAllThreatIntel = async (turns) => {
   // 3. Normalization and Deduplication
   return {
     financialDetails: {
-      upiIds: Array.from(upiIds).map(u => u.toLowerCase()),
+      // Each entry: { id: string, confidence: 'high' | 'low' }
+      upiIds: Array.from(upiMap.values()),
       bankAccounts: bankAccounts.map(b => ({
         accountNumber: b.accountNumber,
         ifsc: b.ifsc.toUpperCase(),

@@ -103,7 +103,7 @@ export default function App() {
                   <span>ID: {attacker.senderId}</span>
                   {attacker.financialDetails?.upiIds?.length > 0 && (
                     <span style={{ color: 'var(--color-accent-red)' }}>
-                      UPI: {attacker.financialDetails.upiIds[0]}
+                      UPI: {attacker.financialDetails.upiIds[0]?.id ?? attacker.financialDetails.upiIds[0]}
                     </span>
                   )}
                   {attacker.links?.length > 0 && (
@@ -174,9 +174,26 @@ export default function App() {
                   <div style={{ marginBottom: '16px' }}>
                     <div className="card-title" style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>UPI IDs</div>
                     {selectedAttacker.financialDetails?.upiIds?.length > 0 ? (
-                      selectedAttacker.financialDetails.upiIds.map((upi, i) => (
-                        <div key={i} className="threat-tag danger">{upi}</div>
-                      ))
+                      selectedAttacker.financialDetails.upiIds.map((upi, i) => {
+                        // Backward-compat: old records may be plain strings
+                        const upiId  = upi?.id ?? upi;
+                        const isHigh = upi?.confidence === 'high';
+                        return (
+                          <div key={i} className="threat-tag danger" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>{upiId}</span>
+                            <span style={{
+                              fontSize: '10px',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              background: isHigh ? 'rgba(34,197,94,0.15)' : 'rgba(251,191,36,0.15)',
+                              color: isHigh ? '#22c55e' : '#fbbf24',
+                              fontWeight: 600
+                            }}>
+                              {isHigh ? '✓ verified' : '~ possible'}
+                            </span>
+                          </div>
+                        );
+                      })
                     ) : (
                       <p style={{ fontSize: '13px', color: 'var(--color-text-dark)' }}>No UPI IDs captured.</p>
                     )}

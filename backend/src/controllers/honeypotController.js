@@ -1,7 +1,7 @@
 import Conversation from '../models/Conversation.js';
 import KnownContact from '../models/KnownContact.js';
 import AttackerProfile from '../models/AttackerProfile.js';
-import { runHoneypotAgent } from '../../../agent/src/graphMistral.js';
+import { runHoneypotAgent } from '../../../agent/src/graphGroq.js';
 
 /**
  * Handles incoming messages from Telegram (routed via n8n).
@@ -22,26 +22,43 @@ export const handleIncomingMessage = async (req, res) => {
     const whitelisted = await KnownContact.findOne({ senderId });
     if (whitelisted) {
       console.log(`Whitelisted contact detected (senderId: ${senderId}). Passing through.`);
+      // CONTRACT: `reply` is intentionally null for known/whitelisted contacts.
+      // The honeypot MUST NOT auto-reply to these senders — doing so would expose
+      // the bot's existence to trusted people in the operator's contact list.
+      // Consumers of this response (e.g. the n8n workflow) MUST read the original
+      // Telegram message directly from the trigger node and forward it to the
+      // operator — they MUST NOT use `reply` from this payload for any send action.
       return res.status(200).json({
         isKnownContact: true,
-        reply: null,
+        reply: null,       // Always null — DO NOT use this field for known contacts.
         endConversation: true
       });
     }
 
     // 3. Retrieve existing conversation or initialize a new one
     let conversation = await Conversation.findOne({ chatId });
-    
-    if (conversation && conversation.isConversationEnded) {
-      console.log(`Conversation ${chatId} has already ended. Disengaging.`);
+
+    // If user typed /reset or /start in Telegram, silently reset the session
+    if (text.trim() === '/start' || text.trim() === '/reset') {
+      if (conversation) {
+        await Conversation.deleteOne({ chatId });
+        console.log(`[Reset] Cleaned up session for chatId: ${chatId}`);
+      }
       return res.status(200).json({
-        isKnownContact: false,
-        reply: "Kamala Devi is no longer responding.",
-        endConversation: true,
-        isScam: conversation.isScam,
-        confidence: conversation.confidence,
-        threatIntelligence: conversation.threatIntelligence
+        isKnownContact: true,
+        reply: null, // Silent pass-through, no message sent to Telegram
+        endConversation: true
       });
+    }
+
+    
+    // If previous conversation completed its lifecycle, start a fresh conversation
+    if (conversation && conversation.isConversationEnded) {
+      console.log(`Previous conversation for ${chatId} ended. Starting a fresh session.`);
+      // Archive old chat ID by appending timestamp so history is preserved in DB
+      conversation.chatId = `${chatId}_archived_${Date.now()}`;
+      await conversation.save();
+      conversation = null; // Forces new session creation below
     }
 
     if (!conversation) {
@@ -54,17 +71,20 @@ export const handleIncomingMessage = async (req, res) => {
       console.log(`Starting new honeypot conversation session for chatId: ${chatId}`);
     }
 
-    // 4. Append attacker's turn to database schema
+
+    // 4. Append attacker's turn and increment explicit turn counter (Issue 3)
     conversation.turns.push({
       role: 'attacker',
       text,
       timestamp: receivedAt ? new Date(receivedAt) : new Date()
     });
+    conversation.turnCount = (conversation.turnCount || 0) + 1;
 
-    // 5. Invoke LangGraph Agent to handle multi-turn scoring, dialogue, and final extraction
+    // 5. Invoke LangGraph Agent — pass stored turnCount so burst messages don't undercount (Issue 3)
     const agentResult = await runHoneypotAgent({
       chatId,
-      turns: conversation.turns
+      turns: conversation.turns,
+      turnCount: conversation.turnCount
     });
 
     // 6. Append honeypot's response turn
@@ -74,7 +94,15 @@ export const handleIncomingMessage = async (req, res) => {
       timestamp: new Date()
     });
 
-    // 7. Update conversation fields in database
+    // 7. Persist per-turn scam score (Issue 4) — always recorded, even on non-terminal turns
+    conversation.turnScores.push({
+      turnNumber: conversation.turnCount,
+      score:      agentResult.scamScore     ?? 0,
+      reasoning:  agentResult.scamReason    ?? '',
+      timestamp:  new Date()
+    });
+
+    // 8. Update conversation fields in database
     conversation.isScam = agentResult.isScam;
     conversation.confidence = agentResult.confidence;
     conversation.isConversationEnded = agentResult.isConversationEnded;
@@ -107,9 +135,16 @@ export const handleIncomingMessage = async (req, res) => {
         profile.confidence = agentResult.confidence;
         profile.classificationReasoning = agentResult.classificationReasoning;
 
-        // Merge UPI IDs
-        const upiSet = new Set([...(profile.financialDetails?.upiIds || []), ...(agentResult.threatIntelligence?.financialDetails?.upiIds || [])]);
-        profile.financialDetails.upiIds = Array.from(upiSet);
+        // Merge UPI IDs — dedup by .id, upgrade confidence low→high if possible
+        const upiMap = new Map();
+        [...(profile.financialDetails?.upiIds || []), ...(agentResult.threatIntelligence?.financialDetails?.upiIds || [])].forEach(u => {
+          const existing = upiMap.get(u.id);
+          // Keep or upgrade: 'high' always wins over 'low'
+          if (!existing || (existing.confidence === 'low' && u.confidence === 'high')) {
+            upiMap.set(u.id, { id: u.id, confidence: u.confidence });
+          }
+        });
+        profile.financialDetails.upiIds = Array.from(upiMap.values());
 
         // Merge Cards
         const cardSet = new Set([...(profile.financialDetails?.cards || []), ...(agentResult.threatIntelligence?.financialDetails?.cards || [])]);

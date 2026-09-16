@@ -16,6 +16,12 @@ const turnSchema = new mongoose.Schema({
   }
 });
 
+// UPI ID entry with confidence tier (Issue 2)
+const upiIdSchema = new mongoose.Schema({
+  id:         { type: String, default: '' },
+  confidence: { type: String, enum: ['high', 'low'], default: 'low' }
+}, { _id: false });
+
 const bankAccountSchema = new mongoose.Schema({
   accountNumber: { type: String, default: '' },
   ifsc: { type: String, default: '' },
@@ -30,7 +36,7 @@ const linkSchema = new mongoose.Schema({
 
 const threatIntelligenceSchema = new mongoose.Schema({
   financialDetails: {
-    upiIds: [{ type: String }],
+    upiIds: [upiIdSchema],      // { id, confidence: 'high'|'low' }
     bankAccounts: [bankAccountSchema],
     cards: [{ type: String }]
   },
@@ -59,6 +65,22 @@ const conversationSchema = new mongoose.Schema({
     default: ''
   },
   turns: [turnSchema],
+  // Explicit attacker-turn counter (Issue 3).
+  // Incremented by 1 for every inbound attacker message — NOT derived from turns.length,
+  // so multi-message bursts before a bot reply are counted correctly.
+  turnCount: {
+    type: Number,
+    default: 0
+  },
+  // Per-turn score history (Issue 4).
+  // Each entry records the scam-likelihood score Mistral assigned on that attacker turn.
+  // Exposed via GET /api/honeypot/conversations/:chatId so the dashboard can chart the trajectory.
+  turnScores: [{
+    turnNumber: { type: Number, required: true },
+    score:      { type: Number, required: true },
+    reasoning:  { type: String, default: '' },
+    timestamp:  { type: Date,   default: Date.now }
+  }],
   isScam: {
     type: Boolean,
     default: false
