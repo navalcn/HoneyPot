@@ -33,6 +33,26 @@ const attackerProfileSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  isBlocked: {
+    type: Boolean,
+    default: false
+  },
+  blockReason: {
+    type: String,
+    default: ''
+  },
+  blockedAt: {
+    type: Date,
+    default: null
+  },
+  blockedAttemptsCount: {
+    type: Number,
+    default: 0
+  },
+  lastBlockedAttempt: {
+    type: Date,
+    default: null
+  },
   confidence: {
     type: Number,
     default: 0

@@ -4,7 +4,8 @@ import {
   addKnownContact, 
   getRecentAlerts, 
   getAllConversations, 
-  getConversationById 
+  getConversationById,
+  toggleBlockSender
 } from '../controllers/honeypotController.js';
 
 const router = express.Router();
@@ -14,6 +15,9 @@ router.post('/incoming', handleIncomingMessage);
 
 // Helper route to whitelist a user ID (for manual testing)
 router.post('/whitelist', addKnownContact);
+
+// Route to manually block/unblock a senderId
+router.post('/block-toggle', toggleBlockSender);
 
 // Route to fetch recent alerts / flagged attacker profiles
 router.get('/alerts', getRecentAlerts);

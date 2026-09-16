@@ -48,10 +48,31 @@ export const handleIncomingMessage = async (req, res) => {
     });
   }
 
+  // 3. Automated Blocking Enforcement: Check if sender is an already flagged/blocked scammer
+  const existingAttacker = await AttackerProfile.findOne({ senderId });
+  let existingConv = await Conversation.findOne({ chatId });
+
+  if (existingAttacker && (existingAttacker.isBlocked || (existingAttacker.isScam && existingConv?.isConversationEnded))) {
+    existingAttacker.isBlocked = true;
+    existingAttacker.blockedAttemptsCount = (existingAttacker.blockedAttemptsCount || 0) + 1;
+    existingAttacker.lastBlockedAttempt = new Date();
+    await existingAttacker.save();
+
+    console.log(`🚫 [AUTO-BLOCK ENFORCED] Inbound message from flagged scammer blocked! (senderId: ${senderId}, Name: ${existingAttacker.senderName || 'Scammer'}, Attempts: ${existingAttacker.blockedAttemptsCount})`);
+
+    return res.status(200).json({
+      isBlocked: true,
+      isScam: true,
+      reply: null, // Silent drop / no honeypot reply to blocked scammers
+      endConversation: true,
+      message: "Sender is flagged as a confirmed scammer. Inbound communication blocked."
+    });
+  }
+
   // Process this chat's messages sequentially using the serializer
   try {
     const result = await serializeChatRequest(chatId, async () => {
-      // 3. Retrieve existing conversation or initialize a new one
+      // 4. Retrieve existing conversation or initialize a new one
       let conversation = await Conversation.findOne({ chatId });
 
       // If user typed /reset or /start in Telegram, silently reset the session
@@ -224,6 +245,14 @@ export const handleIncomingMessage = async (req, res) => {
             profile.associatedChats.push(chatId);
           }
 
+          // If honeypot finished its stalling lifecycle and confirmed scam, enforce permanent block
+          if (agentResult.isConversationEnded) {
+            profile.isBlocked = true;
+            profile.blockedAt = profile.blockedAt || new Date();
+            profile.blockReason = 'Autonomous Honeypot: Stalling complete and threat intel extracted';
+            console.log(`🔒 [PERMANENT BLOCK APPLIED] Sender ${profile.senderName} (${profile.senderId}) is now permanently blocked.`);
+          }
+
           profile.markModified('financialDetails');
           profile.markModified('attackerIdentifiers');
           profile.markModified('links');
@@ -243,6 +272,7 @@ export const handleIncomingMessage = async (req, res) => {
           reply: agentResult.reply,
           endConversation: agentResult.isConversationEnded,
           isScam: conversation.isScam,
+          isBlocked: Boolean(agentResult.isConversationEnded && conversation.isScam),
           confidence: conversation.confidence,
           classificationReasoning: conversation.classificationReasoning,
           threatIntelligence: currentThreatIntel
@@ -374,6 +404,49 @@ export const getConversationById = async (req, res) => {
     console.error('Error in getConversationById controller:', error);
     return res.status(500).json({
       error: 'An internal server error occurred while fetching the conversation.'
+    });
+  }
+};
+
+/**
+ * Manually toggle block/unblock for a senderId.
+ * POST /api/honeypot/block-toggle
+ */
+export const toggleBlockSender = async (req, res) => {
+  try {
+    const { senderId, block } = req.body;
+    if (!senderId) {
+      return res.status(400).json({ error: 'senderId is required.' });
+    }
+
+    let profile = await AttackerProfile.findOne({ senderId });
+    if (!profile) {
+      return res.status(404).json({ error: 'AttackerProfile not found for this senderId.' });
+    }
+
+    const newBlockState = block !== undefined ? Boolean(block) : !profile.isBlocked;
+    profile.isBlocked = newBlockState;
+    if (newBlockState) {
+      profile.blockedAt = new Date();
+      profile.blockReason = 'Manually blocked by SOC Analyst from Honeypot Console';
+    } else {
+      profile.blockReason = 'Unblocked by SOC Analyst';
+    }
+
+    await profile.save();
+    console.log(`[Block Toggle] SenderId ${senderId} is now ${newBlockState ? 'BLOCKED 🚫' : 'UNBLOCKED 🟢'}`);
+
+    return res.status(200).json({
+      success: true,
+      senderId,
+      isBlocked: profile.isBlocked,
+      blockedAttemptsCount: profile.blockedAttemptsCount || 0,
+      blockReason: profile.blockReason
+    });
+  } catch (error) {
+    console.error('Error in toggleBlockSender controller:', error);
+    return res.status(500).json({
+      error: 'An internal server error occurred while updating block status.'
     });
   }
 };

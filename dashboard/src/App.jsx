@@ -55,6 +55,24 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Manual block/unblock action
+  const handleToggleBlock = async (senderId, currentBlocked) => {
+    try {
+      const response = await fetch('/api/honeypot/block-toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId, block: !currentBlocked })
+      });
+      if (response.ok) {
+        const resData = await response.json();
+        setSelectedAttacker(prev => prev ? { ...prev, isBlocked: resData.isBlocked, blockedAttemptsCount: resData.blockedAttemptsCount } : null);
+        setAlerts(prev => prev.map(a => a.senderId === senderId ? { ...a, isBlocked: resData.isBlocked, blockedAttemptsCount: resData.blockedAttemptsCount } : a));
+      }
+    } catch (err) {
+      console.error('Error toggling block state:', err);
+    }
+  };
+
   // Fetch chat details when selected attacker changes
   useEffect(() => {
     if (selectedAttacker) {
@@ -106,7 +124,12 @@ export default function App() {
               >
                 <div className="threat-card-header">
                   <div className="threat-name">{attacker.senderName || 'Anonymous Scammer'}</div>
-                  <div className="threat-badge scam">Scam</div>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <div className="threat-badge scam">Scam</div>
+                    {attacker.isBlocked && (
+                      <div className="threat-badge" style={{ background: '#ef4444', color: '#fff' }}>🚫 Blocked</div>
+                    )}
+                  </div>
                 </div>
                 <div className="threat-meta">
                   <span>ID: {attacker.senderId}</span>
@@ -121,7 +144,7 @@ export default function App() {
                     </span>
                   )}
                 </div>
-                <div className="threat-time">{formatDate(attacker.createdAt)}</div>
+                <div className="threat-time">{formatDate(attacker.updatedAt || attacker.createdAt)}</div>
               </div>
             ))
           )}
@@ -156,21 +179,45 @@ export default function App() {
             <div className="intel-panel">
               
               <div>
-                <h3 className="panel-section-title">Attacker Classification</h3>
-                <div className="intel-card" style={{ borderLeft: '4px solid var(--color-accent-red)' }}>
-                  <div className="card-title" style={{ color: 'var(--color-accent-red)' }}>
-                    SCAM DETECTED
+                <h3 className="panel-section-title">Attacker Classification & Firewall Status</h3>
+                <div className="intel-card" style={{ borderLeft: selectedAttacker.isBlocked ? '4px solid #ef4444' : '4px solid #f59e0b' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="card-title" style={{ color: selectedAttacker.isBlocked ? 'var(--color-accent-red)' : '#f59e0b' }}>
+                      {selectedAttacker.isBlocked ? 'SCAMMER BLOCKED 🚫' : 'SCAM DETECTED • ACTIVE ENGAGEMENT 🟡'}
+                    </div>
+                    <button 
+                      onClick={() => handleToggleBlock(selectedAttacker.senderId, selectedAttacker.isBlocked)}
+                      style={{
+                        padding: '5px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        border: 'none',
+                        background: selectedAttacker.isBlocked ? '#22c55e' : '#ef4444',
+                        color: '#fff',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {selectedAttacker.isBlocked ? 'Unblock Sender 🟢' : 'Enforce Immediate Block 🚫'}
+                    </button>
                   </div>
-                  <p style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--color-text-main)' }}>
+                  <p style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--color-text-main)', marginTop: '8px' }}>
                     {selectedAttacker.classificationReasoning || "Threat classified as active financial scamming attempt."}
                   </p>
-                  <div style={{ marginTop: '14px', display: 'flex', gap: '12px' }}>
+                  <div style={{ marginTop: '14px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                     <div className="console-status" style={{ backgroundColor: 'var(--color-accent-red-glow)', color: 'var(--color-accent-red)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                       Confidence: {(selectedAttacker.confidence * 100).toFixed(0)}%
                     </div>
                     <div className="console-status" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--color-text-muted)' }}>
                       Sender ID: {selectedAttacker.senderId}
                     </div>
+                    {selectedAttacker.isBlocked && (
+                      <div className="console-status" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontWeight: 600 }}>
+                        Firewall: {selectedAttacker.blockedAttemptsCount || 0} Inbound Msg Dropped
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
