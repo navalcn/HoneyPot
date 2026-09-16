@@ -15,6 +15,15 @@ export default function App() {
       if (response.ok) {
         const data = await response.json();
         setAlerts(data);
+        setSelectedAttacker(prev => {
+          if (!prev && data.length > 0) return data[0];
+          // If the currently selected attacker was updated, keep it fresh
+          if (prev) {
+            const updated = data.find(a => a._id === prev._id || a.senderId === prev.senderId);
+            return updated || prev;
+          }
+          return prev;
+        });
       }
     } catch (error) {
       console.error("Error fetching alerts:", error);

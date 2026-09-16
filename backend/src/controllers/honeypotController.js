@@ -2,10 +2,10 @@ import Conversation from '../models/Conversation.js';
 import KnownContact from '../models/KnownContact.js';
 import AttackerProfile from '../models/AttackerProfile.js';
 import { runHoneypotAgent } from '../../../agent/src/graphGroq.js';
+import { extractAllThreatIntel } from '../../../agent/src/utils/extractor.js';
 
 // In-memory per-chat queue to serialize concurrent/burst messages per chatId
 const chatQueues = new Map();
-
 
 const serializeChatRequest = (chatId, fn) => {
   const previous = chatQueues.get(chatId) || Promise.resolve();
@@ -120,75 +120,117 @@ export const handleIncomingMessage = async (req, res) => {
         timestamp:  new Date()
       });
 
-      // 8. Update conversation fields in database
-      conversation.isScam = agentResult.isScam;
-      conversation.confidence = agentResult.confidence;
+      // 8. Live Threat Intelligence extraction on any turn with score >= 6
+      let currentThreatIntel = agentResult.threatIntelligence;
+      const isScamTurn = (agentResult.scamScore >= 6) || agentResult.isScam;
+
+      if (isScamTurn && !currentThreatIntel) {
+        try {
+          console.log(`[Live Threat Extraction] Extracting IOCs for chatId: ${chatId} (Score: ${agentResult.scamScore}/10)...`);
+          currentThreatIntel = await extractAllThreatIntel(conversation.turns);
+        } catch (err) {
+          console.warn('Threat extraction warning:', err.message);
+        }
+      }
+
+      conversation.isScam = isScamTurn;
+      conversation.confidence = agentResult.confidence || (agentResult.scamScore >= 8 ? 0.95 : 0.8);
       conversation.isConversationEnded = agentResult.isConversationEnded;
-      conversation.classificationReasoning = agentResult.classificationReasoning;
-      conversation.threatIntelligence = agentResult.threatIntelligence;
+      conversation.classificationReasoning = agentResult.classificationReasoning || agentResult.scamReason;
+      conversation.threatIntelligence = currentThreatIntel;
 
       await conversation.save();
       console.log(`[Logged Turn ${conversation.turnCount}] ChatId: ${chatId} | Score: ${agentResult.scamScore} | Reply: ${agentResult.reply ? `"${agentResult.reply.slice(0, 40)}..."` : '(Silent Mode - No Reply)'}`);
 
-      // 9. Update AttackerProfile if conversation ended as a scam
-      if (agentResult.isConversationEnded && agentResult.isScam) {
+      // 9. Real-time AttackerProfile creation/update in DB for immediate dashboard alerts!
+      if (conversation.isScam) {
         try {
           let profile = await AttackerProfile.findOne({ senderId: conversation.senderId });
           if (!profile) {
             profile = new AttackerProfile({
               senderId: conversation.senderId,
-              senderName: conversation.senderName,
+              senderName: conversation.senderName || 'Anonymous Scammer',
               financialDetails: { upiIds: [], bankAccounts: [], cards: [] },
               links: [],
               attackerIdentifiers: { phoneNumbers: [], aliases: [], handles: [] },
               associatedChats: []
             });
+            console.log(`[AttackerProfile] Creating new profile for senderId: ${conversation.senderId} (${profile.senderName})`);
           }
-          profile.isScam = agentResult.isScam;
-          profile.confidence = agentResult.confidence;
-          profile.classificationReasoning = agentResult.classificationReasoning;
 
-          const upiMap = new Map();
-          [...(profile.financialDetails?.upiIds || []), ...(agentResult.threatIntelligence?.financialDetails?.upiIds || [])].forEach(u => {
-            const existing = upiMap.get(u.id);
-            if (!existing || (existing.confidence === 'low' && u.confidence === 'high')) {
-              upiMap.set(u.id, { id: u.id, confidence: u.confidence });
-            }
-          });
-          profile.financialDetails.upiIds = Array.from(upiMap.values());
+          profile.isScam = true;
+          profile.confidence = conversation.confidence;
+          profile.classificationReasoning = conversation.classificationReasoning || agentResult.scamReason;
+          if (conversation.senderName && (!profile.senderName || profile.senderName === 'Unknown Attacker')) {
+            profile.senderName = conversation.senderName;
+          }
 
-          const cardSet = new Set([...(profile.financialDetails?.cards || []), ...(agentResult.threatIntelligence?.financialDetails?.cards || [])]);
-          profile.financialDetails.cards = Array.from(cardSet);
+          if (currentThreatIntel) {
+            // UPI IDs merge
+            const upiMap = new Map();
+            (profile.financialDetails?.upiIds || []).forEach(u => {
+              const id = typeof u === 'string' ? u : u?.id;
+              const conf = typeof u === 'object' && u?.confidence ? u.confidence : 'low';
+              if (id) upiMap.set(id.toLowerCase(), { id, confidence: conf });
+            });
+            (currentThreatIntel.financialDetails?.upiIds || []).forEach(u => {
+              const id = typeof u === 'string' ? u : u?.id;
+              const conf = typeof u === 'object' && u?.confidence ? u.confidence : 'high';
+              if (id) {
+                const existing = upiMap.get(id.toLowerCase());
+                if (!existing || (existing.confidence === 'low' && conf === 'high')) {
+                  upiMap.set(id.toLowerCase(), { id, confidence: conf });
+                }
+              }
+            });
+            profile.financialDetails.upiIds = Array.from(upiMap.values());
 
-          const newAccounts = agentResult.threatIntelligence?.financialDetails?.bankAccounts || [];
-          newAccounts.forEach(newAcc => {
-            if (!profile.financialDetails.bankAccounts.some(acc => acc.accountNumber === newAcc.accountNumber)) {
-              profile.financialDetails.bankAccounts.push(newAcc);
-            }
-          });
+            // Cards merge
+            const cardSet = new Set([...(profile.financialDetails?.cards || []), ...(currentThreatIntel.financialDetails?.cards || [])]);
+            profile.financialDetails.cards = Array.from(cardSet);
 
-          const newLinks = agentResult.threatIntelligence?.links || [];
-          newLinks.forEach(newLink => {
-            if (!profile.links.some(l => l.url.toLowerCase() === newLink.url.toLowerCase())) {
-              profile.links.push(newLink);
-            }
-          });
+            // Bank accounts merge
+            const newAccounts = currentThreatIntel.financialDetails?.bankAccounts || [];
+            if (!profile.financialDetails.bankAccounts) profile.financialDetails.bankAccounts = [];
+            newAccounts.forEach(newAcc => {
+              if (newAcc.accountNumber && !profile.financialDetails.bankAccounts.some(acc => acc.accountNumber === newAcc.accountNumber)) {
+                profile.financialDetails.bankAccounts.push(newAcc);
+              }
+            });
 
-          const phoneSet = new Set([...(profile.attackerIdentifiers?.phoneNumbers || []), ...(agentResult.threatIntelligence?.attackerIdentifiers?.phoneNumbers || [])]);
-          profile.attackerIdentifiers.phoneNumbers = Array.from(phoneSet);
+            // Links merge
+            const newLinks = currentThreatIntel.links || [];
+            if (!profile.links) profile.links = [];
+            newLinks.forEach(newLink => {
+              if (newLink.url && !profile.links.some(l => l.url.toLowerCase() === newLink.url.toLowerCase())) {
+                profile.links.push(newLink);
+              }
+            });
 
-          const aliasSet = new Set([...(profile.attackerIdentifiers?.aliases || []), ...(agentResult.threatIntelligence?.attackerIdentifiers?.aliases || [])]);
-          profile.attackerIdentifiers.aliases = Array.from(aliasSet);
+            // Phone numbers merge
+            const phoneSet = new Set([...(profile.attackerIdentifiers?.phoneNumbers || []), ...(currentThreatIntel.attackerIdentifiers?.phoneNumbers || [])]);
+            profile.attackerIdentifiers.phoneNumbers = Array.from(phoneSet);
 
-          const handleSet = new Set([...(profile.attackerIdentifiers?.handles || []), ...(agentResult.threatIntelligence?.attackerIdentifiers?.handles || [])]);
-          profile.attackerIdentifiers.handles = Array.from(handleSet);
+            // Aliases merge
+            const aliasSet = new Set([...(profile.attackerIdentifiers?.aliases || []), ...(currentThreatIntel.attackerIdentifiers?.aliases || [])]);
+            profile.attackerIdentifiers.aliases = Array.from(aliasSet);
+
+            // Handles merge
+            const handleSet = new Set([...(profile.attackerIdentifiers?.handles || []), ...(currentThreatIntel.attackerIdentifiers?.handles || [])]);
+            profile.attackerIdentifiers.handles = Array.from(handleSet);
+          }
 
           if (!profile.associatedChats.includes(chatId)) {
             profile.associatedChats.push(chatId);
           }
 
+          profile.markModified('financialDetails');
+          profile.markModified('attackerIdentifiers');
+          profile.markModified('links');
+          profile.markModified('associatedChats');
+
           await profile.save();
-          console.log(`🚨 ALERT BROADCAST: Attacker Profile successfully saved for ${profile.senderName}!`);
+          console.log(`🚨 LIVE ALERT BROADCAST: Attacker Profile updated for ${profile.senderName}! Flagged UPIs: ${profile.financialDetails.upiIds.map(u => u.id).join(', ') || 'None'}`);
         } catch (err) {
           console.error('Error saving AttackerProfile:', err);
         }
@@ -200,10 +242,10 @@ export const handleIncomingMessage = async (req, res) => {
           isKnownContact: false,
           reply: agentResult.reply,
           endConversation: agentResult.isConversationEnded,
-          isScam: agentResult.isScam,
-          confidence: agentResult.confidence,
-          classificationReasoning: agentResult.classificationReasoning,
-          threatIntelligence: agentResult.threatIntelligence
+          isScam: conversation.isScam,
+          confidence: conversation.confidence,
+          classificationReasoning: conversation.classificationReasoning,
+          threatIntelligence: currentThreatIntel
         }
       };
     });
@@ -217,13 +259,38 @@ export const handleIncomingMessage = async (req, res) => {
   }
 };
 
+
 /**
  * Exposes a feed of recent alerts / flagged attacker profiles.
  * GET /api/honeypot/alerts
  */
 export const getRecentAlerts = async (req, res) => {
   try {
-    const alerts = await AttackerProfile.find().sort({ createdAt: -1 }).limit(50);
+    let alerts = await AttackerProfile.find().sort({ updatedAt: -1, createdAt: -1 }).limit(50);
+    
+    // Fallback sync: If AttackerProfile is empty or missing, sync from flagged scam Conversations
+    if (!alerts || alerts.length === 0) {
+      const scamConvs = await Conversation.find({ isScam: true }).sort({ updatedAt: -1 }).limit(50);
+      for (const conv of scamConvs) {
+        let profile = await AttackerProfile.findOne({ senderId: conv.senderId });
+        if (!profile) {
+          profile = new AttackerProfile({
+            senderId: conv.senderId,
+            senderName: conv.senderName || 'Anonymous Scammer',
+            isScam: true,
+            confidence: conv.confidence || 0.9,
+            classificationReasoning: conv.classificationReasoning || 'Flagged during honeypot dialogue',
+            financialDetails: conv.threatIntelligence?.financialDetails || { upiIds: [], bankAccounts: [], cards: [] },
+            links: conv.threatIntelligence?.links || [],
+            attackerIdentifiers: conv.threatIntelligence?.attackerIdentifiers || { phoneNumbers: [], aliases: [], handles: [] },
+            associatedChats: [conv.chatId]
+          });
+          await profile.save();
+        }
+      }
+      alerts = await AttackerProfile.find().sort({ updatedAt: -1, createdAt: -1 }).limit(50);
+    }
+
     return res.status(200).json(alerts);
   } catch (error) {
     console.error('Error in getRecentAlerts controller:', error);
