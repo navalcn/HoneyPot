@@ -116,12 +116,18 @@ $$\text{Persona}(V) = \begin{cases}
 \text{Silent Passive Dropper}, & \text{if } V = \text{benign and } \text{Score}(M_t) \le 2 
 \end{cases}$$
 
-### C. Anti-Fingerprinting Gaussian Delay Model
-Scammer operations often employ client-side bot detection to flag instant automated responses. To simulate authentic human smartphone texting, response delay $T_{\text{delay}}$ is generated via:
+### C. Anti-Fingerprinting Cognitive & Typing Delay Model
+Scammer operations often employ client-side bot detection to flag instant automated responses. To simulate authentic human smartphone texting, response delay $T_{\text{delay}}$ models both **cognitive deliberation** (reading comprehension and verification hesitation) and **physical typing duration** strictly proportional to the outgoing reply character length:
 
-$$T_{\text{delay}} = \mu_{\text{reaction}} + (L \cdot k_{\text{typing}}) + \epsilon, \quad \epsilon \sim \mathcal{N}(0, \sigma^2)$$
+$$T_{\text{delay}} = T_{\text{think}}(L_{\text{in}}) + (L_{\text{out}} \cdot k_{\text{type}}) + W \cdot \tau_{\text{pause}} + \epsilon$$
 
-Where $L$ is message character length, $k_{\text{typing}} \sim \mathcal{N}(65, 15)\text{ ms/char}$, and $\mu_{\text{reaction}} \approx 1800\text{ ms}$, bound between $1.2\text{ s}$ and $9.0\text{ s}$.
+Where:
+- $T_{\text{think}}(L_{\text{in}}) = L_{\text{in}} \cdot k_{\text{read}} + \tau_{\text{verify}}$ models reading comprehension of the scammer's inbound message and verification hesitation (e.g., searching for eyeglasses, re-reading threats, or opening banking apps).
+- $L_{\text{out}} \cdot k_{\text{type}}$ models physical smartphone typing speed ($k_{\text{type}} \approx 140\text{ ms/char}$ for elderly *Kamla Devi*, and $\approx 60\text{ ms/char}$ for student *Rohan Sharma*).
+- $W \cdot \tau_{\text{pause}}$ models inter-word spacing pauses ($\tau_{\text{pause}} \sim \mathcal{N}(180, 40)\text{ ms}$).
+- $\epsilon \sim \mathcal{N}(0, \sigma^2)$ injects random hesitation bursts (app switching / distraction).
+- Total delay is clamped within a realistic mobile interaction window of $3.8\text{ s} - 22.0\text{ s}$.
+- Phonetic typographical perturbations (e.g., `payment` $\rightarrow$ `paymnt`, `account` $\rightarrow$ `accont`) are injected with probability $P = 0.22$.
 
 ### D. Multi-Modal Threat Extraction Pipeline
 Scammers frequently distribute dynamic UPI payment QR codes. The multi-modal module extracts payloads conforming to the National Payments Corporation of India (NPCI) UPI specification:

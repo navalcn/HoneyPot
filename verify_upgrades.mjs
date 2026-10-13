@@ -26,10 +26,11 @@ console.log("✅ Personas validated: Kamla Devi (Elderly/Threats), Rohan Sharma 
 
 // TEST 2: Anti-Fingerprinting Simulation
 console.log("--- 2. Testing Anti-Fingerprinting (Human Jitter & Typos) ---");
-const sampleCleanReply = "Please send your bank account number and transfer details. I will help you.";
-const delay = calculateHumanDelay(sampleCleanReply, "KAMLA_DEVI");
-console.log(`Generated Simulated Typing Latency: ${delay}ms (realistic human range 3.5s - 18s)`);
-console.assert(delay >= 3000 && delay <= 20000, "Delay outside realistic envelope");
+const sampleIncomingThreat = "Dear customer, your power will be cut tonight at 9:30 PM due to unpaid bill.";
+const sampleCleanReply = "Beta ruko main passbook dekh rahi hu.";
+const delay = calculateHumanDelay(sampleCleanReply, "KAMLA_DEVI", sampleIncomingThreat);
+console.log(`Generated Simulated Typing Latency: ${delay}ms (Cognitive Reading + Typing Duration: ~3.8s - 22s)`);
+console.assert(delay >= 3500 && delay <= 22000, "Delay outside realistic envelope");
 
 const typoVersion = injectHumanTypos(sampleCleanReply, 1.0);
 console.log(`Original: "${sampleCleanReply}"`);

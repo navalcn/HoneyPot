@@ -33,40 +33,67 @@ function randomGaussian(mean = 0, stdev = 1) {
 
 /**
  * Computes realistic human delay (in milliseconds) before sending a reply
- * Mobile texting involves reading, hesitating/thinking, unlocking, and typing.
- * Range: 3,500ms (fast student text) to 18,000ms (clumsy elderly/panicked typing)
- * @param {string} text - Message text
- * @param {string} personaId - KAMLA_DEVI (slower) vs ROHAN_SHARMA (faster) vs RAJESH_UNCLE
+ * 
+ * Accurately models real human conversation dynamics:
+ * 1. Cognitive / Deliberation Delay (T_think):
+ *    - Reading the scammer's message and comprehension (based on incoming message complexity).
+ *    - Hesitating, searching for glasses, checking account/app, or verifying suspicious claims.
+ * 2. Physical Mobile Typing Delay (T_type):
+ *    - Strictly proportional to the generated reply text length (character count L).
+ *    - Models smartphone keystroke speed (WPM / ms-per-keystroke + pauses between words).
+ * 3. Total Latency = T_think + T_type + Stochastic Jitter
+ * 
+ * @param {string} replyText - The honeypot's outgoing response text
+ * @param {string} personaId - KAMLA_DEVI (slower/confused) vs ROHAN_SHARMA (fast thumbs) vs RAJESH_UNCLE (cautious)
+ * @param {string} incomingText - Optional latest message received from scammer to compute reading time
  */
-export function calculateHumanDelay(text = "", personaId = "KAMLA_DEVI") {
-  if (!text) return 0;
-  
-  // Persona-specific reading & hesitation time (in ms)
-  let baseReaction;
-  let charSpeed;
-  
-  if (personaId === "KAMLA_DEVI") {
-    // Elderly person: finds spectacles, reads slowly, re-reads threat (4 to 9 sec base)
-    baseReaction = Math.max(3500, randomGaussian(6000, 1500));
-    charSpeed = randomGaussian(95, 25); // slow single-finger typing
-  } else if (personaId === "ROHAN_SHARMA") {
-    // College student: fast typer, but checks notifications (2.5 to 6 sec base)
-    baseReaction = Math.max(2500, randomGaussian(3800, 900));
-    charSpeed = randomGaussian(45, 12); // fast thumbs typing
-  } else {
-    // Rajesh Uncle: business owner, cautious (3.5 to 8 sec base)
-    baseReaction = Math.max(3000, randomGaussian(5200, 1200));
-    charSpeed = randomGaussian(75, 18);
-  }
-  
-  // Random human hesitation burst (e.g. app switching, network lag)
-  const occasionalHesitation = Math.random() < 0.35 ? randomGaussian(2500, 800) : 0;
-  
-  const typingDuration = text.length * Math.max(30, charSpeed);
-  const totalDelay = Math.round(baseReaction + typingDuration + occasionalHesitation);
+export function calculateHumanDelay(replyText = "", personaId = "KAMLA_DEVI", incomingText = "") {
+  if (!replyText) return 0;
 
-  // Return realistic delay clamped between 3,500ms and 18,000ms
-  return Math.min(Math.max(totalDelay, 3500), 18000);
+  // 1. STAGE 1: COGNITIVE DELIBERATION & VERIFICATION DELAY (T_think)
+  // Humans first read the incoming threat/offer, get anxious/curious, or hesitate before touching the keyboard.
+  const incomingLength = (incomingText && typeof incomingText === "string") ? incomingText.length : 60;
+  
+  // Reading speed: Average adult reads ~200-250 WPM (approx 20-30ms per character)
+  let readingTime = incomingLength * randomGaussian(22, 5);
+
+  let verificationHesitation;
+  let charKeystrokeSpeed;
+
+  if (personaId === "KAMLA_DEVI") {
+    // Elderly persona: finds reading spectacles, panics, checks passbook or re-reads 2-3 times
+    verificationHesitation = Math.max(3000, randomGaussian(4500, 1200));
+    // Clumsy single-finger typing on mobile keyboard: ~120-170ms per character
+    charKeystrokeSpeed = Math.max(100, randomGaussian(140, 25));
+  } else if (personaId === "ROHAN_SHARMA") {
+    // College student: reads fast, quick decision, fast dual-thumb smartphone typing
+    verificationHesitation = Math.max(1200, randomGaussian(2000, 500));
+    // Fast mobile typing: ~45-75ms per character
+    charKeystrokeSpeed = Math.max(40, randomGaussian(60, 12));
+  } else {
+    // Rajesh Uncle: reads carefully, calculates margins, cautious business texting
+    verificationHesitation = Math.max(2200, randomGaussian(3500, 900));
+    // Moderate index-finger typing: ~80-120ms per character
+    charKeystrokeSpeed = Math.max(70, randomGaussian(95, 18));
+  }
+
+  const cognitiveDelay = readingTime + verificationHesitation;
+
+  // 2. STAGE 2: PHYSICAL TYPING DELAY (T_type)
+  // Strictly proportional to reply character count, including spacebar/backspace pauses
+  const wordCount = replyText.trim().split(/\s+/).length;
+  // Natural pause between words (~150-300ms pause when hitting spacebar and thinking of next word)
+  const wordPauses = wordCount * randomGaussian(180, 40);
+  const typingDuration = (replyText.length * charKeystrokeSpeed) + wordPauses;
+
+  // 3. STAGE 3: STOCHASTIC JITTER & APP SWITCHING
+  // Occasional 2-3 second pause (simulating opening PhonePe, looking at SMS OTP)
+  const appInteractionPause = Math.random() < 0.40 ? randomGaussian(2800, 700) : 0;
+
+  const totalCalculated = Math.round(cognitiveDelay + typingDuration + appInteractionPause);
+
+  // Bounds: minimum 3,800ms up to 22,000ms for long elderly stalling replies
+  return Math.min(Math.max(totalCalculated, 3800), 22000);
 }
 
 /**

@@ -182,11 +182,13 @@ You MUST respond strictly with a valid JSON object matching this schema:
     let humanDelayMs = 0;
     if (reply) {
       reply = injectHumanTypos(reply, 0.22);
-      humanDelayMs = calculateHumanDelay(reply, selectedPersonaId);
+      // Retrieve latest incoming message from attacker to compute realistic reading/deliberation time
+      const latestAttackerMsg = [...state.messages].reverse().find(m => (m.role === 'user' || m.role === 'attacker' || m.role === 'human'))?.content || '';
+      humanDelayMs = calculateHumanDelay(reply, selectedPersonaId, latestAttackerMsg);
     }
 
     console.log(`[Groq Turn Result] Score: ${scamScore}/10 | Category: ${scamCategory} | Persona: ${selectedPersonaId}`);
-    console.log(`[Anti-Fingerprint] Simulated Typing Latency: ${humanDelayMs}ms`);
+    console.log(`[Anti-Fingerprint] Simulated Typing Latency: ${humanDelayMs}ms (Length: ${reply ? reply.length : 0} chars)`);
     console.log(`[Persona Reply]: ${reply ? `"${reply}"` : '(Silent Mode - No reply sent)'}`);
 
     return {

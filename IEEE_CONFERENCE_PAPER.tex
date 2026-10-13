@@ -124,12 +124,12 @@ Each persona executes a 5-stage deceptive stalling playbook:
     \item \textbf{Stage 5 (Controlled Disengagement)}: Excuses itself to consult family or authorities, concluding the session and enforcing an automated firewall block.
 \end{enumerate}
 
-\subsection{Anti-Fingerprinting Gaussian Delay Model}
-To prevent automated detection by attacker tooling, response transmission latency $T_{\text{delay}}$ follows a normal distribution conditioned on character count $L$:
+\subsection{Anti-Fingerprinting Delay and Behavioral Simulation}
+To prevent automated detection by attacker tooling, response transmission latency $T_{\text{delay}}$ models both cognitive deliberation (reading comprehension and verification hesitation) and physical smartphone typing duration proportional to character count $L$:
 \begin{equation}
-T_{\text{delay}} = \mu_{\text{reaction}} + (L \cdot k_{\text{typing}}) + \epsilon, \quad \epsilon \sim \mathcal{N}(0, \sigma^2)
+T_{\text{delay}} = T_{\text{think}}(L_{\text{in}}) + (L_{\text{out}} \cdot k_{\text{type}}) + W \cdot \tau_{\text{pause}} + \epsilon
 \end{equation}
-where $k_{\text{typing}} \sim \mathcal{N}(65, 15)\text{ ms/char}$, $\mu_{\text{reaction}} = 1800\text{ ms}$, bound within $[1200\text{ ms}, 9000\text{ ms}]$. In addition, phonetic typographical noise (e.g., \textit{account} $\rightarrow$ \textit{accont}, \textit{payment} $\rightarrow$ \textit{paymnt}) is probabilistically injected at $P = 0.15$.
+where $T_{\text{think}}(L_{\text{in}}) = L_{\text{in}} \cdot k_{\text{read}} + \tau_{\text{verify}}$ captures the time spent by the persona reading the scam message and searching for eyeglasses or apps ($\tau_{\text{verify}} \sim \mathcal{N}(4500, 1200)\text{ ms}$ for \textit{Kamla Devi}), $L_{\text{out}}$ denotes reply character length, $k_{\text{type}} \sim \mathcal{N}(140, 25)\text{ ms/char}$ models single-finger mobile keyboard typing, $W$ represents word count with intra-word pauses $\tau_{\text{pause}} \sim \mathcal{N}(180, 40)\text{ ms}$, and $\epsilon \sim \mathcal{N}(0, \sigma^2)$ injects random hesitation. Phonetic typographical noise is probabilistically injected at $P = 0.22$.
 
 \subsection{Multi-Modal Threat Extraction}
 The extraction engine ingests both raw text and binary QR code attachments. Payloads conforming to the NPCI specification are parsed deterministically:
