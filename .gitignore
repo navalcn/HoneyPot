@@ -1,7 +1,35 @@
-node_modules
+# Dependencies & virtual environments
+node_modules/
+pptx_env/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Environment variables & secrets
 .env
+.env.local
 .env.example
+
+# College templates and reference PDFs
 Honeypot IEEE Paper.pdf
 Major_Project_Phase3_PPT.pptx
 Open day_Poster_Presentation_Template.pptx
 Major FINAL temp.pptx
+
+# Temporary test & scratch artifacts
+test_out.pptx
+slide_exports/
+powershell.cmd
+*.tmp
+*info.txt
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+build_final_deck.py
+generate_diagram.py
