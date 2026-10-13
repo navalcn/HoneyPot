@@ -1,7 +1,9 @@
 import express from 'express';
 import { 
   handleIncomingMessage, 
-  addKnownContact, 
+  addKnownContact,
+  getKnownContacts,
+  deleteKnownContact,
   getRecentAlerts, 
   getAllConversations, 
   getConversationById,
@@ -13,12 +15,6 @@ const router = express.Router();
 // Route to ingest messages from Telegram
 router.post('/incoming', handleIncomingMessage);
 
-// Helper route to whitelist a user ID (for manual testing)
-router.post('/whitelist', addKnownContact);
-
-// Route to manually block/unblock a senderId
-router.post('/block-toggle', toggleBlockSender);
-
 // Route to fetch recent alerts / flagged attacker profiles
 router.get('/alerts', getRecentAlerts);
 
@@ -27,5 +23,13 @@ router.get('/conversations', getAllConversations);
 
 // Route to fetch a single conversation by chatId
 router.get('/conversations/:chatId', getConversationById);
+
+// Route to manually block/unblock a senderId
+router.post('/block-toggle', toggleBlockSender);
+
+// Known Contacts (Whitelist) CRUD routes
+router.get('/contacts', getKnownContacts);
+router.post('/whitelist', addKnownContact);
+router.delete('/contacts/:senderId', deleteKnownContact);
 
 export default router;

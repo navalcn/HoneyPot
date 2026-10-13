@@ -3,6 +3,8 @@ import KnownContact from '../models/KnownContact.js';
 import AttackerProfile from '../models/AttackerProfile.js';
 import { runHoneypotAgent } from '../../../agent/src/graphGroq.js';
 import { extractAllThreatIntel } from '../../../agent/src/utils/extractor.js';
+import { enrichThreatIntelligence } from '../utils/threatEnricher.js';
+import { extractMultiModalThreats } from '../../../agent/src/utils/multimodalExtractor.js';
 
 // In-memory per-chat queue to serialize concurrent/burst messages per chatId
 const chatQueues = new Map();
@@ -154,14 +156,50 @@ export const handleIncomingMessage = async (req, res) => {
         }
       }
 
+      // Check if incoming request contained multimodal OCR or QR payloads (2.A)
+      if (req.body.qrPayload || req.body.textOCR) {
+        const mmIntel = extractMultiModalThreats({
+          qrPayload: req.body.qrPayload,
+          textOCR: req.body.textOCR
+        });
+        if (mmIntel.upiIds.length > 0 || mmIntel.phishingUrls.length > 0) {
+          currentThreatIntel = currentThreatIntel || { financialDetails: { upiIds: [], bankAccounts: [], cards: [] }, links: [], attackerIdentifiers: {} };
+          mmIntel.upiIds.forEach(u => {
+            if (!currentThreatIntel.financialDetails.upiIds.some(existing => (existing.id || existing) === u.upiId)) {
+              currentThreatIntel.financialDetails.upiIds.push({ id: u.upiId, confidence: 'high' });
+            }
+          });
+          mmIntel.phishingUrls.forEach(p => {
+            if (!currentThreatIntel.links.some(l => l.url === p.url)) {
+              currentThreatIntel.links.push({ url: p.url, description: 'Extracted from QR Code' });
+            }
+          });
+        }
+      }
+
+      // 8.b Enrich extracted IOCs with external threat feeds (2.C)
+      let enrichmentData = null;
+      if (currentThreatIntel && currentThreatIntel.links && currentThreatIntel.links.length > 0) {
+        try {
+          const enriched = await enrichThreatIntelligence(currentThreatIntel);
+          enrichmentData = enriched.enrichment;
+        } catch (enrichErr) {
+          console.warn('[Enrichment Warning]:', enrichErr.message);
+        }
+      }
+
       conversation.isScam = isScamTurn;
       conversation.confidence = agentResult.confidence || (agentResult.scamScore >= 8 ? 0.95 : 0.8);
       conversation.isConversationEnded = agentResult.isConversationEnded;
       conversation.classificationReasoning = agentResult.classificationReasoning || agentResult.scamReason;
+      conversation.activePersona = agentResult.activePersona || conversation.activePersona || 'KAMLA_DEVI';
+      conversation.scamCategory = agentResult.scamCategory || conversation.scamCategory || 'general_fraud';
+      conversation.simulatedHumanDelayMs = agentResult.humanDelayMs || 0;
       conversation.threatIntelligence = currentThreatIntel;
+      conversation.threatEnrichment = enrichmentData;
 
       await conversation.save();
-      console.log(`[Logged Turn ${conversation.turnCount}] ChatId: ${chatId} | Score: ${agentResult.scamScore} | Reply: ${agentResult.reply ? `"${agentResult.reply.slice(0, 40)}..."` : '(Silent Mode - No Reply)'}`);
+      console.log(`[Logged Turn ${conversation.turnCount}] ChatId: ${chatId} | Persona: ${conversation.activePersona} | Score: ${agentResult.scamScore} | Typing Delay: ${conversation.simulatedHumanDelayMs}ms`);
 
       // 9. Real-time AttackerProfile creation/update in DB for immediate dashboard alerts!
       if (conversation.isScam) {
@@ -265,17 +303,27 @@ export const handleIncomingMessage = async (req, res) => {
         }
       }
 
+      // Optional live anti-fingerprinting delay: pauses response so Telegram sees genuine typing latency
+      if (process.env.ENABLE_LIVE_DELAY === 'true' && conversation.simulatedHumanDelayMs > 0 && agentResult.reply) {
+        console.log(`⏳ [Live Delay Active] Simulating human typing pause: ${conversation.simulatedHumanDelayMs}ms before sending reply...`);
+        await new Promise(resolve => setTimeout(resolve, conversation.simulatedHumanDelayMs));
+      }
+
       return {
         statusCode: 200,
         payload: {
           isKnownContact: false,
           reply: agentResult.reply,
+          activePersona: conversation.activePersona,
+          scamCategory: conversation.scamCategory,
+          humanDelayMs: conversation.simulatedHumanDelayMs,
           endConversation: agentResult.isConversationEnded,
           isScam: conversation.isScam,
           isBlocked: Boolean(agentResult.isConversationEnded && conversation.isScam),
           confidence: conversation.confidence,
           classificationReasoning: conversation.classificationReasoning,
-          threatIntelligence: currentThreatIntel
+          threatIntelligence: currentThreatIntel,
+          threatEnrichment: conversation.threatEnrichment
         }
       };
     });
@@ -369,6 +417,39 @@ export const addKnownContact = async (req, res) => {
     return res.status(500).json({
       error: 'An internal server error occurred while whitelisting the contact.'
     });
+  }
+};
+
+/**
+ * Retrieves all whitelisted known contacts.
+ * GET /api/honeypot/contacts
+ */
+export const getKnownContacts = async (req, res) => {
+  try {
+    const contacts = await KnownContact.find().sort({ createdAt: -1 });
+    return res.status(200).json(contacts);
+  } catch (error) {
+    console.error('Error in getKnownContacts controller:', error);
+    return res.status(500).json({ error: 'An internal server error occurred while fetching contacts.' });
+  }
+};
+
+/**
+ * Removes a whitelisted contact by senderId.
+ * DELETE /api/honeypot/contacts/:senderId
+ */
+export const deleteKnownContact = async (req, res) => {
+  try {
+    const { senderId } = req.params;
+    const result = await KnownContact.findOneAndDelete({ senderId });
+    if (!result) {
+      return res.status(404).json({ error: 'Contact not found.' });
+    }
+    console.log(`Whitelisted contact removed: ${senderId} (${result.name})`);
+    return res.status(200).json({ success: true, message: `Contact ${result.name} removed from whitelist.` });
+  } catch (error) {
+    console.error('Error in deleteKnownContact controller:', error);
+    return res.status(500).json({ error: 'An internal server error occurred while removing the contact.' });
   }
 };
 

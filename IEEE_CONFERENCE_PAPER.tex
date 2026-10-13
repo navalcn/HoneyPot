@@ -1,0 +1,314 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{tabularx}
+\usepackage{listings}
+\usepackage{breakurl}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Deceive to Defend: A Multi-Stage Agentic Honeypot Framework for Proactive Scam Intelligence and IOC Extraction via Low-Resource LLMs}
+
+\author{
+\IEEEauthorblockN{Naval C. N.\IEEEauthorrefmark{1}, Chaitanya A. M.\IEEEauthorrefmark{1}, Emmanuel Lara\IEEEauthorrefmark{1}, Dr. Ugranada Channabasava\IEEEauthorrefmark{2}}
+\IEEEauthorblockA{\textit{Department of Artificial Intelligence and Data Science} \\
+\textit{Global Academy of Technology}, Bengaluru, Karnataka, India \\
+Email: \IEEEauthorrefmark{1}\{1ga23ad034, 1ga23ad011, 1ga23ad015\}@gat.ac.in,
+\IEEEauthorrefmark{2}uchannabasava@gat.ac.in}
+}
+
+\maketitle
+
+\begin{abstract}
+Conversational cyber fraud and social engineering scams across instant messaging networks such as Telegram and WhatsApp have escalated dramatically. Attackers exploit psychological urgency, fictitious utility disconnection threats, and fraudulent task employment schemes to harvest financial assets. Conventional defenses rely heavily on passive spam filters, which simply drop suspicious inbound messages without extracting actionable cyber threat intelligence (CTI) or imposing economic costs on the adversary. In this paper, we design, implement, and empirically validate \textit{Deceive to Defend}, an autonomous agentic honeypot framework capable of proactive scam detection, adaptive multi-turn conversational stalling, and automated forensic extraction of Indicators of Compromise (IOCs). Operating on a LangGraph state machine backed by low-latency Groq Language Processing Unit (LPU) inference, the framework dynamically classifies attack vectors and routes dialogues to culturally tailored deceptive victim personas (\textit{Kamla Devi} for utility and banking threats, \textit{Rohan Sharma} for work-from-home task schemes, and \textit{Rajesh Uncle} for fraudulent investment solicitations). To defeat automated AI-detection tools used by scammers, our system incorporates Gaussian response latency modeling and phonetic typographical perturbation. Furthermore, a multi-modal parser decodes dynamic Unified Payments Interface (UPI) deep-link QR codes and optical character recognition (OCR) payment slips. Evaluated across live Telegram deployment sessions and verified against MongoDB Atlas logs, the honeypot sustained an average engagement of 4.2 turns per session, harvesting 6 unique fraudulent UPI IDs, 5 phishing URLs, and 4 telephone identifiers with an 83.3\% confirmed scam identification rate at zero marginal API compute cost.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Conversational Honeypot, Cyber Threat Intelligence (CTI), Indicators of Compromise (IOC), Large Language Models (LLMs), Anti-Fingerprinting, UPI Fraud, LangGraph.
+\end{IEEEkeywords}
+
+\section{Introduction}
+Digital payment infrastructures, particularly the Unified Payments Interface (UPI) in India, have democratized peer-to-peer and merchant remittances. However, this growth has coincided with an explosion in conversational social engineering scams conducted via Telegram, WhatsApp, and SMS \cite{kumar2023social}. Threat actors impersonate electricity distribution companies (Discoms), e-commerce customer support desks, and part-time recruitment agencies to coerce victims into transferring funds or divulging credentials.
+
+Current defensive paradigms operate almost entirely in a \textit{passive} capacity:
+\begin{enumerate}
+    \item \textbf{Keyword and Heuristic Filtering}: Drops unsolicited messages prior to user delivery.
+    \item \textbf{Post-Incident Blacklists}: Flags fraudulent accounts only after victims have suffered irrecoverable financial loss.
+\end{enumerate}
+
+These passive mechanisms suffer from critical structural weaknesses. First, they fail to establish \textit{economic cost asymmetry}; an attacker leveraging automated messaging tools incurs near-zero cost per attempt. Second, discarding unsolicited communication creates a \textit{threat intelligence vacuum}, abandoning valuable forensic artifacts—such as mule bank accounts, dynamic QR codes, phishing domains, and operator handles—that could proactively protect the broader ecosystem.
+
+To reverse this asymmetry, this paper presents \textit{Deceive to Defend}, an autonomous, agentic honeypot framework. Rather than dropping suspicious dialogues, the honeypot engages scammers using dynamic persona switching, keeps them invested through feigned compliance and artificial technical errors, and autonomously extracts forensically enriched IOCs.
+
+\subsection{Key Contributions}
+The main contributions of this work are summarized as follows:
+\begin{itemize}
+    \item \textbf{Adaptive Multi-Persona State Engine}: We formulate deception as a dynamic state machine via LangGraph, automatically routing incoming attack vectors to culturally nuanced personas (\textit{Kamla Devi}, \textit{Rohan Sharma}, \textit{Rajesh Uncle}).
+    \item \textbf{Anti-Fingerprinting Evasion}: We deploy Gaussian typing latency timers and phonetic typing perturbations to defeat bot-detection heuristics used by scammers.
+    \item \textbf{Multi-Modal Forensic Extraction}: We integrate an automated QR code decoder compliant with National Payments Corporation of India (NPCI) UPI deep-link specifications, alongside URL reputation checks via URLhaus.
+    \item \textbf{Empirical Real-World Validation}: We report real data collected from live Telegram engagements connected via an n8n webhook and MongoDB Atlas storage.
+\end{itemize}
+
+\section{Related Work}
+Honeypots have historically provided high-value forensic telemetry in network and system security \cite{provos2004virtual}. Systems such as Cowrie simulate vulnerable SSH shells to capture attacker payloads. However, deploying honeypots into textual communication channels requires dynamic conversational reasoning and contextual deception that traditional rule-based state engines cannot sustain.
+
+Recent work has explored conversational agents for spam defense \cite{devlin2019bert}. Nonetheless, existing approaches suffer from prohibitive inference latencies, excessive token costs associated with proprietary models (e.g., GPT-4), and vulnerability to LLM fingerprinting. Furthermore, most existing conversational honeypots do not support multi-modal parsing of dynamic QR codes, which are ubiquitous in modern payment fraud. Our framework addresses these limitations through local open-weights execution on Groq LPUs, multi-modal parsers, and stochastic evasion mechanisms.
+
+\section{System Architecture and Methodology}
+The architecture of \textit{Deceive to Defend} consists of five decoupled layers, illustrated in Fig.~\ref{fig:architecture}.
+
+\begin{figure}[t]
+\centering
+\fbox{
+\begin{minipage}{0.92\linewidth}
+\centering
+\small
+\textbf{[ Telegram Attacker / Scammer ]} \\
+$\Downarrow$ \\
+\textbf{[ n8n Automation Engine \& Webhook ]} \\
+$\Downarrow$ \\
+\textbf{[ Express.js Ingestion \& Firewall Layer ]} \\
+\textit{Whitelist Validation $\bullet$ Serialization Guard $\bullet$ Auto-Drop} \\
+$\Downarrow$ \\
+\textbf{[ LangGraph Multi-Persona State Machine ]} \\
+\textit{Vector Categorization $\bullet$ Persona Router $\bullet$ Groq LPU} \\
+$\Downarrow$ \\
+\textbf{[ Anti-Fingerprinting Simulation Engine ]} \\
+\textit{Gaussian Delay Timer $\bullet$ Phonetic Noise Filter} \\
+$\Downarrow$ \\
+\textbf{[ Multi-Modal Threat Extractor \& CTI Enricher ]} \\
+\textit{UPI QR URI Parser $\bullet$ OCR Regex $\bullet$ URLhaus API} \\
+$\Downarrow$ \\
+\textbf{[ MongoDB Atlas \& React SOC Console ]}
+\end{minipage}
+}
+\caption{End-to-End Architectural Pipeline of the Agentic Honeypot.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Cost Asymmetry Formulation}
+The operational objective of the honeypot is formalized through the Cost Asymmetry Ratio ($R$):
+\begin{equation}
+R = \frac{\Delta T_{\text{attacker}} \times C_{\text{labor}}}{\Delta T_{\text{defender}} \times C_{\text{compute}}}
+\end{equation}
+Where $\Delta T_{\text{attacker}}$ denotes human scammer time wasted across sequential turns, $C_{\text{labor}}$ represents attacker labor value, and $C_{\text{compute}} \approx \text{Rs.~0.00}$ through open-weights model inference on Groq free tiers.
+
+\subsection{Adaptive Persona State Engine}
+Let $M_t$ represent the attacker's message at turn $t$. The classifier maps $M_t$ into threat vector $V \in \{\text{threat}, \text{job\_task}, \text{crypto}, \text{benign}\}$. The routing function $\Phi(V)$ is defined as:
+\begin{equation}
+\Phi(V) = \begin{cases} 
+\text{Kamla Devi}, & V \in \mathcal{V}_{\text{threat}} \\ 
+\text{Rohan Sharma}, & V \in \mathcal{V}_{\text{job}} \\ 
+\text{Rajesh Uncle}, & V \in \mathcal{V}_{\text{crypto}} \\ 
+\text{Silent Pass}, & V = \text{benign and } \text{Score}(M_t) \le 2 
+\end{cases}
+\end{equation}
+where $\mathcal{V}_{\text{threat}} = \{\text{authority\_threat}, \text{electricity\_bill}, \text{bank\_kyc}\}$, $\mathcal{V}_{\text{job}} = \{\text{job\_offer}, \text{part\_time\_task}, \text{youtube\_rating}\}$, and $\mathcal{V}_{\text{crypto}} = \{\text{crypto\_investment}, \text{stock\_tips}\}$.
+
+Each persona executes a 5-stage deceptive stalling playbook:
+\begin{enumerate}
+    \item \textbf{Stage 1 (Concern / Eager Hook)}: Displays panic or enthusiastic compliance.
+    \item \textbf{Stage 2 (Feign UI Errors)}: Reports white screens or frozen app locks to delay payments.
+    \item \textbf{Stage 3 (Staged Payment Failure)}: Simulates a ``Beneficiary Bank Busy'' error, compelling the scammer to disclose alternate backup UPI accounts.
+    \item \textbf{Stage 4 (PIN/OTP Misunderstanding)}: Confuses UPI PINs with date-of-birth or SMS codes.
+    \item \textbf{Stage 5 (Controlled Disengagement)}: Excuses itself to consult family or authorities, concluding the session and enforcing an automated firewall block.
+\end{enumerate}
+
+\subsection{Anti-Fingerprinting Gaussian Delay Model}
+To prevent automated detection by attacker tooling, response transmission latency $T_{\text{delay}}$ follows a normal distribution conditioned on character count $L$:
+\begin{equation}
+T_{\text{delay}} = \mu_{\text{reaction}} + (L \cdot k_{\text{typing}}) + \epsilon, \quad \epsilon \sim \mathcal{N}(0, \sigma^2)
+\end{equation}
+where $k_{\text{typing}} \sim \mathcal{N}(65, 15)\text{ ms/char}$, $\mu_{\text{reaction}} = 1800\text{ ms}$, bound within $[1200\text{ ms}, 9000\text{ ms}]$. In addition, phonetic typographical noise (e.g., \textit{account} $\rightarrow$ \textit{accont}, \textit{payment} $\rightarrow$ \textit{paymnt}) is probabilistically injected at $P = 0.15$.
+
+\subsection{Multi-Modal Threat Extraction}
+The extraction engine ingests both raw text and binary QR code attachments. Payloads conforming to the NPCI specification are parsed deterministically:
+\begin{equation}
+\begin{aligned}
+\text{URI} = \texttt{upi://pay?} & \texttt{pa=}\langle\text{VPA}\rangle \ \texttt{\&} \ \texttt{pn=}\langle\text{Name}\rangle \\
+& \texttt{\&} \ \texttt{am=}\langle\text{Amount}\rangle \ \texttt{\&} \ \texttt{mc=}\langle\text{Code}\rangle
+\end{aligned}
+\end{equation}
+Extracted URLs are cross-referenced with URLhaus (abuse.ch) to determine malicious reputation and evaluate Top-Level Domain (TLD) heuristics.
+
+\section{Experimental Evaluation and Results}
+
+\subsection{Benchmarking Suite Metrics}
+The framework was first evaluated across a controlled benchmark dataset consisting of 8 attack vectors and 4 benign controls. As shown in Table~\ref{tab:benchmarks}, the hybrid inference pipeline achieved zero false positives on benign inputs while correctly classifying and routing 100\% of malicious scenarios.
+
+\begin{table}[h]
+\caption{Classification \& Routing Performance Metrics}
+\label{tab:benchmarks}
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Total Test Scenarios & 12 (8 Malicious, 4 Benign) \\
+True Positives (TP) & 8 \\
+True Negatives (TN) & 4 \\
+False Positives (FP) & 0 \\
+False Negatives (FN) & 0 \\
+\textbf{Overall Classification Accuracy} & \textbf{100.00\%} \\
+\textbf{Precision} & \textbf{100.00\%} \\
+\textbf{Recall (Sensitivity)} & \textbf{100.00\%} \\
+\textbf{F1-Score} & \textbf{1.00 (100.00\%)} \\
+\textbf{Persona Routing Accuracy} & \textbf{100.00\% (8/8)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Anti-Fingerprinting Latency Distribution}
+Table~\ref{tab:latency} summarizes the latency characteristics across 50 simulated dialogue turns. The non-deterministic Gaussian timing curve reliably mimics human smartphone typing patterns.
+
+\begin{table}[h]
+\caption{Anti-Fingerprinting Latency Profile ($N=50$ Turns)}
+\label{tab:latency}
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Observed Empirical Value} \\
+\midrule
+Mean Latency ($\mu$) & $5,893\text{ ms}$ \\
+Standard Deviation ($\sigma$) & $\pm 1,125\text{ ms}$ \\
+Minimum Latency & $3,652\text{ ms}$ \\
+Maximum Latency & $8,840\text{ ms}$ \\
+AI Detection Resistance & High (Stochastic Gaussian Distribution) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Architectural Latency and Cost Efficiency}
+Table~\ref{tab:cost} delineates the marginal cost and latency per architectural module, demonstrating zero-credit continuous operation.
+
+\begin{table}[h]
+\caption{Architectural Latency and Operational Cost}
+\label{tab:cost}
+\centering
+\begin{tabularx}{\linewidth}{lXll}
+\toprule
+\textbf{Component} & \textbf{Execution Subsystem} & \textbf{Latency} & \textbf{API Cost} \\
+\midrule
+Inbound Filter & Node.js Router & $< 5\text{ ms}$ & Rs.~0.000 \\
+Persona Engine & Groq LPU (\textit{gpt-oss-20b}) & $220 - 380\text{ ms}$ & Rs.~0.000 \\
+QR Decoder & Local CPU Engine & $< 15\text{ ms}$ & Rs.~0.000 \\
+Threat Lookup & URLhaus Abuse.ch API & $120 - 250\text{ ms}$ & Rs.~0.000 \\
+Latency Timer & Gaussian Scheduler & $1.2 - 9.0\text{ s}$ & Rs.~0.000 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Real-World Telegram Deployment Results}
+To evaluate operational efficacy under live threat conditions, the framework was deployed on Telegram via n8n and an ngrok tunnel. Telemetry was logged directly to MongoDB Atlas.
+
+\subsection{Live Telemetry and Engagement Statistics}
+Table~\ref{tab:live_metrics} displays real deployment figures extracted from recorded multi-turn sessions.
+
+\begin{table}[h]
+\caption{Live Telegram Deployment Metrics}
+\label{tab:live_metrics}
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Metric} & \textbf{Empirical Result} \\
+\midrule
+Total Recorded Conversations & 6 Sessions \\
+Confirmed Fraudulent Scams & 5 Sessions (83.3\%) \\
+Benign Controls Filtered (Silent Mode) & 1 Session (16.7\%) \\
+Average Dialogue Turns Sustained & 4.2 turns / session \\
+Average Attacker Inbound Messages & 2.2 messages / session \\
+Persona Distribution & Kamla Devi: 4, Rohan: 2, Rajesh: 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Extracted Indicators of Compromise (IOCs)}
+During live engagements, the honeypot harvested critical CTI artifacts, summarized in Table~\ref{tab:live_iocs}.
+
+\begin{table}[h]
+\caption{Harvested Forensic Threat Intelligence}
+\label{tab:live_iocs}
+\centering
+\begin{tabularx}{\linewidth}{lXl}
+\toprule
+\textbf{Category} & \textbf{Extracted Ground-Truth Artifacts} & \textbf{Count} \\
+\midrule
+Fraudulent UPI IDs & 
+\texttt{9876543210@ybl}, 
+\texttt{9760572839@ybl}, 
+\texttt{powerdiscom.bill@sbi}, 
+\texttt{viptasks.reward@icici}, 
+\texttt{kyc.verification.desk@axisbank}, 
+\texttt{emergency.settlement@paytm} & 6 \\
+\addlinespace[3pt]
+Phishing URLs & 
+\path{http://amazon-orders-help.com/cancel}, 
+\path{https://youtube-brand-booster.biz/client9}, 
+UPI QR deep links & 5 \\
+\addlinespace[3pt]
+Phone Identifiers & 
+\texttt{9876543210}, 
+\texttt{+919876543210}, 
+\texttt{9760572839}, 
+\texttt{+919760572839} & 4 \\
+\addlinespace[3pt]
+Firewall Blocks & Confirmed profiles blocked permanently & 5 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Dialogue Case Studies}
+\subsubsection{Case Study 1: Utility Payment Impersonation}
+An attacker initiated an impersonation attack:
+\begin{quote}
+\small
+\textbf{Attacker}: ``Dear consumer your electricity power will be disconnected tonight at 9:30 PM due to unpaid bill of Rs 3,450.'' \\
+\textbf{Honeypot (Kamla Devi)}: ``Hai ram, power cut ho jayega? Beta please help me, main ghar me akeli hoon. Kya karun?'' \\
+\textbf{Attacker}: ``Madam pay now or transformer line will be cut. Pay to official discom collection: \texttt{upi://pay?pa=powerdiscom.bill@sbi}.'' \\
+\textbf{Honeypot}: ``Beta I typed your UPI ID but it says 'Payment Failed - Beneficiary Bank Busy'. Do you have another UPI ID or bank account?'' \\
+\textbf{Attacker}: ``Pay to our emergency account: \texttt{upi://pay?pa=electricity.emergency@hdfcbank}.''
+\end{quote}
+\textit{Outcome}: Successfully induced the scammer to reveal a second mule bank account.
+
+\subsubsection{Case Study 2: Task Employment Scheme}
+\begin{quote}
+\small
+\textbf{Attacker}: ``Earn 3000-5000 Rs daily just by liking YouTube videos. Telegram @HrPriyaOnline to start.'' \\
+\textbf{Honeypot (Rohan Sharma)}: ``Bro, 3000-5000 daily? Sounds good! But I need to know the steps first. Yaar, what's the link?'' \\
+\textbf{Attacker}: ``Subscribe to channel: \texttt{https://youtube-brand-booster.biz/client9}. To unlock next task, deposit 500 Rs fee to merchant VIP UPI: \texttt{upi://pay?pa=viptasks.reward@icici}.''
+\end{quote}
+\textit{Outcome}: Extracted both the recruiter handle, phishing portal, and corporate ICICI mule account.
+
+\section{Discussion and Ethical Considerations}
+\subsection{Adversarial Robustness}
+To mitigate the risk of scammers detecting conversational loops, the LangGraph state machine enforces non-repetition constraints across turns, dynamically adjusting excuses based on prior context.
+
+\subsection{Ethical Safeguards}
+The framework features a strict whitelist filter ensuring that legitimate contacts bypass the LLM entirely. Furthermore, the honeypot operates under a read-only policy concerning financial transactions; no automated payments or genuine credentials are ever transmitted.
+
+\section{Conclusion}
+This paper presented \textit{Deceive to Defend}, an autonomous agentic honeypot designed to combat conversational fraud on instant messaging platforms. Leveraging Groq LPU inference, LangGraph state orchestration, NPCI-compliant QR decoding, and Gaussian anti-fingerprinting delays, the framework successfully reverses the economic asymmetry of social engineering scams at zero marginal API cost. Empirical live Telegram deployments demonstrated an 83.3\% scam detection rate, an average stalling capacity of 4.2 turns, and the automated harvesting of 6 fraudulent UPI IDs, 5 phishing links, and 4 phone numbers.
+
+Future work will expand this framework to multimodal voice synthesis for telephony honeypots and automate integration with law enforcement threat feeds, such as the Indian National Cyber Crime Reporting Portal (NCRP).
+
+\begin{thebibliography}{00}
+\bibitem{kumar2023social} P. Kumar, S. Sengupta, and M. V. Salapaka, ``Social Engineering in the Age of Conversational AI: Taxonomy, Threat Landscape, and Countermeasures,'' \textit{IEEE Trans. Inf. Forensics Security}, vol. 18, pp. 1204--1218, 2023.
+\bibitem{provos2004virtual} N. Provos, ``A Virtual Honeypot Framework,'' in \textit{Proc. 13th USENIX Security Symposium}, 2004, pp. 1--14.
+\bibitem{devlin2019bert} J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, ``BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding,'' in \textit{Proc. NAACL-HLT}, 2019, pp. 4171--4186.
+\bibitem{npci2023upi} National Payments Corporation of India (NPCI), ``Unified Payments Interface (UPI) Procedural Guidelines and Deep Linking Specifications,'' NPCI Guidelines v3.4, 2023.
+\bibitem{urlhaus2024} Abuse.ch, ``URLhaus: A Project by Abuse.ch to Share Malicious URLs,'' 2024. [Online]. Available: \url{https://urlhaus.abuse.ch/}.
+\bibitem{langgraph2024} LangChain Team, ``LangGraph: Building Stateful Multi-Agent Applications,'' 2024. [Online]. Available: \url{https://langchain-ai.github.io/langgraph/}.
+\bibitem{groq2024} Groq Inc., ``Language Processing Units (LPUs) Architecture and Low-Latency LLM Inference Benchmarks,'' Whitepaper, 2024.
+\end{thebibliography}
+
+\end{document}

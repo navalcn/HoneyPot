@@ -1,6 +1,7 @@
 import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
-import { PERSONA } from "./config/persona.js";
+import { PERSONAS } from "./config/persona.js";
 import { extractAllThreatIntel } from "./utils/extractor.js";
+import { calculateHumanDelay, injectHumanTypos } from "./utils/antiFingerprint.js";
 
 // 1. Define the conversation state schema
 export const AgentState = Annotation.Root({
@@ -16,6 +17,18 @@ export const AgentState = Annotation.Root({
     default: () => 0,
   }),
   scamScore: Annotation({
+    reducer: (x, y) => y ?? x,
+    default: () => 0,
+  }),
+  scamCategory: Annotation({
+    reducer: (x, y) => y ?? x,
+    default: () => "general_fraud",
+  }),
+  activePersona: Annotation({
+    reducer: (x, y) => y ?? x,
+    default: () => "KAMLA_DEVI",
+  }),
+  humanDelayMs: Annotation({
     reducer: (x, y) => y ?? x,
     default: () => 0,
   }),
@@ -86,28 +99,58 @@ export async function callGroq({ model, messages, temperature = 0.6 }) {
   return data.choices[0].message.content;
 }
 
-// 2. Single-Pass Turn: Score + Kamla Devi Persona reply in ONE fast Groq request
+// Helper to determine persona based on category or state
+function resolvePersona(category, currentPersonaId) {
+  if (currentPersonaId && PERSONAS[currentPersonaId] && category === "general_fraud") {
+    return PERSONAS[currentPersonaId];
+  }
+  if (category === "job_offer" || category === "part_time_task" || category === "youtube_rating" || category === "work_from_home") {
+    return PERSONAS.ROHAN_SHARMA;
+  }
+  if (category === "crypto_investment" || category === "forex_trading" || category === "stock_tips") {
+    return PERSONAS.RAJESH_UNCLE;
+  }
+  return PERSONAS.KAMLA_DEVI;
+}
+
+// 2. Single-Pass Turn: Scam Category + Score + Dynamic Persona Reply in ONE fast Groq request
 async function processTurnNode(state) {
   try {
-    const systemPrompt = `${PERSONA.systemPrompt}
+    const currentPersona = PERSONAS[state.activePersona] || PERSONAS.KAMLA_DEVI;
+
+    const systemPrompt = `You are an AI-driven deceptive honeypot defense system with multiple adaptive personas.
+Available Personas:
+1. KAMLA_DEVI: 65yo elderly teacher in Jaipur. Naive, gullible, polite, frightened by official threats (electricity bills, KYC, bank cards, fines).
+2. ROHAN_SHARMA: 21yo broke engineering student in Delhi. Eager for part-time income, quick cash, task scams, YouTube rating gigs. Uses slang like 'bro', 'bhai', 'yaar'.
+3. RAJESH_UNCLE: 52yo textile shopkeeper in Surat. Interested in crypto/forex/stock tips for high returns, slightly cautious but tempted.
+
+Active Default Persona: ${currentPersona.name}
+Active Persona Directive:
+${currentPersona.systemPrompt}
 
 ---
 CRITICAL OPERATIONAL INSTRUCTIONS:
-1. First, evaluate the latest user message in conversation context for scam / fraud risk (0 to 10 scale).
-2. SILENT MODE RULE: If the user's message is merely a generic greeting (e.g., "Hi", "Hello", "Hey", "How are you", "test") with NO scam, NO offer, NO financial request, and NO suspicious intent (scamScore <= 2):
-   - Set "reply": null.
-   - Do NOT generate any greeting or text. Stay silent until they state a purpose.
-3. ENGAGEMENT RULE: If the message contains ANY suspicious proposal, job offer, lottery, bill threat, KYC demand, link, or money request (scamScore >= 3):
-   - Set "reply" to Kamla Devi's naive, stalling response in character.
-4. STRICT NON-REPETITION: Carefully read the transcript history. NEVER repeat the same question or excuse you already sent earlier. React dynamically to the scammer's latest step (e.g., feign opening the app, report a fake payment error to ask for backup UPI/QR, ask about buttons/PIN).
+1. Classify the message into "scamCategory": ["job_offer", "part_time_task", "authority_threat", "electricity_bill", "bank_kyc", "crypto_investment", "lottery", "general_fraud", "benign"].
+2. Select the optimal "activePersona":
+   - "ROHAN_SHARMA" for job, task, work-from-home, YouTube rating scams.
+   - "RAJESH_UNCLE" for crypto, stock, investment, trading scams.
+   - "KAMLA_DEVI" for bill threats, authority, bank KYC, card blocking, or general fraud.
+3. Score scam / fraud risk from 0 to 10 ("scamScore").
+4. SILENT MODE RULE: If the user's message is merely a generic greeting (e.g., "Hi", "Hello", "test") with NO scam intent (scamScore <= 2):
+   - Set "reply": null. Stay silent until purpose is revealed.
+5. ENGAGEMENT RULE: If scamScore >= 3:
+   - Provide an in-character stalling reply matching the selected "activePersona".
+   - Never say you are an AI, honeypot, or bot.
+   - React dynamically to the scammer's latest step (feign app confusion, fake payment errors, ask for backup UPI/QR).
 
 You MUST respond strictly with a valid JSON object matching this schema:
 {
-  "scamScore": <number between 0 (safe) and 10 (definite scam)>,
-  "scamReason": "<single concise sentence explaining why it is or is not a scam>",
-  "reply": "<Kamla Devi's stalling response string OR null if purely a neutral greeting>"
+  "scamScore": <number 0-10>,
+  "scamCategory": "<category_string>",
+  "activePersona": "<KAMLA_DEVI | ROHAN_SHARMA | RAJESH_UNCLE>",
+  "scamReason": "<single concise sentence explaining the indicator>",
+  "reply": "<persona stalling reply string OR null if neutral greeting>"
 }`;
-
 
     const formattedMessages = [
       { role: "system", content: systemPrompt },
@@ -125,19 +168,32 @@ You MUST respond strictly with a valid JSON object matching this schema:
 
     const parsed = JSON.parse(rawContent);
     const scamScore = typeof parsed.scamScore === 'number' ? parsed.scamScore : 3;
+    const scamCategory = parsed.scamCategory || "general_fraud";
+    const selectedPersonaId = (parsed.activePersona && PERSONAS[parsed.activePersona]) ? parsed.activePersona : (state.activePersona || "KAMLA_DEVI");
     const scamReason = parsed.scamReason || "Evaluated conversation indicators.";
     
-    // If score <= 2 or explicitly null, enforce silent mode (reply = null)
+    // If score <= 2 or explicitly null, enforce silent mode
     let reply = parsed.reply;
     if (scamScore <= 2 || reply === "null" || reply === null || reply === "") {
       reply = null;
     }
 
-    console.log(`[Groq Turn Result] Score: ${scamScore}/10 | Reason: "${scamReason}"`);
-    console.log(`[Kamla Devi Reply]: ${reply ? `"${reply}"` : '(Silent Mode - No reply sent)'}`);
+    // Apply Anti-Fingerprinting (2.B): Human typo injection & typing latency calculation
+    let humanDelayMs = 0;
+    if (reply) {
+      reply = injectHumanTypos(reply, 0.22);
+      humanDelayMs = calculateHumanDelay(reply, selectedPersonaId);
+    }
+
+    console.log(`[Groq Turn Result] Score: ${scamScore}/10 | Category: ${scamCategory} | Persona: ${selectedPersonaId}`);
+    console.log(`[Anti-Fingerprint] Simulated Typing Latency: ${humanDelayMs}ms`);
+    console.log(`[Persona Reply]: ${reply ? `"${reply}"` : '(Silent Mode - No reply sent)'}`);
 
     return {
       scamScore,
+      scamCategory,
+      activePersona: selectedPersonaId,
+      humanDelayMs,
       scamReason,
       reply,
       messages: reply ? [{ role: 'assistant', content: reply }] : []
@@ -146,6 +202,9 @@ You MUST respond strictly with a valid JSON object matching this schema:
     console.error("Error in Groq processTurnNode:", error.message);
     return {
       scamScore: 3,
+      scamCategory: "general_fraud",
+      activePersona: state.activePersona || "KAMLA_DEVI",
+      humanDelayMs: 0,
       scamReason: "Fallback scoring due to service error.",
       reply: null,
       messages: []
@@ -299,6 +358,9 @@ export const runHoneypotAgent = async ({ chatId, turns, turnCount }) => {
   return {
     reply: responseState.reply,
     scamScore: responseState.scamScore,
+    scamCategory: responseState.scamCategory,
+    activePersona: responseState.activePersona,
+    humanDelayMs: responseState.humanDelayMs,
     scamReason: responseState.scamReason,
     isConversationEnded: responseState.isConversationEnded,
     isScam: responseState.isScam,

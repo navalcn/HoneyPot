@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import KnownContactsPanel from './KnownContactsPanel.jsx';
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('threats'); // 'threats' | 'contacts'
   const [alerts, setAlerts] = useState([]);
   const [selectedAttacker, setSelectedAttacker] = useState(null);
   const [conversation, setConversation] = useState(null);
@@ -100,12 +102,36 @@ export default function App() {
         <div className="sidebar-header">
           <h1>
             <span className="security-dot-active"></span>
-            HONEYPOT ALERT FEED
+            HONEYPOT CONSOLE
           </h1>
-          <p>Autonomous Threat Intelligence Console</p>
+          <p>Autonomous Threat Intelligence</p>
         </div>
 
-        <div className="alerts-list">
+        {/* Tab Switcher */}
+        <div style={{ display: 'flex', gap: '6px', padding: '0 16px 12px' }}>
+          <button
+            onClick={() => setActiveTab('threats')}
+            style={{
+              flex: 1, padding: '7px 0', fontSize: '11px', fontWeight: 700,
+              borderRadius: '7px', border: 'none', cursor: 'pointer',
+              letterSpacing: '0.05em', transition: 'all 0.2s',
+              background: activeTab === 'threats' ? 'var(--color-accent-red)' : 'var(--bg-tertiary)',
+              color: activeTab === 'threats' ? '#fff' : 'var(--color-text-muted)'
+            }}
+          >🚨 THREATS ({alerts.length})</button>
+          <button
+            onClick={() => setActiveTab('contacts')}
+            style={{
+              flex: 1, padding: '7px 0', fontSize: '11px', fontWeight: 700,
+              borderRadius: '7px', border: 'none', cursor: 'pointer',
+              letterSpacing: '0.05em', transition: 'all 0.2s',
+              background: activeTab === 'contacts' ? '#22c55e' : 'var(--bg-tertiary)',
+              color: activeTab === 'contacts' ? '#fff' : 'var(--color-text-muted)'
+            }}
+          >🛡️ CONTACTS</button>
+        </div>
+
+        <div className="alerts-list" style={{ display: activeTab === 'threats' ? 'block' : 'none' }}>
           {loadingAlerts && alerts.length === 0 ? (
             <div className="empty-placeholder">Loading threats...</div>
           ) : alerts.length === 0 ? (
@@ -149,6 +175,15 @@ export default function App() {
             ))
           )}
         </div>
+
+        {/* Contacts Tab Panel */}
+        {activeTab === 'contacts' && (
+          <div style={{ padding: '0 14px 14px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', padding: '10px 0 8px', letterSpacing: '0.05em' }}>
+              Whitelisted contacts bypass the honeypot pipeline entirely.
+            </div>
+          </div>
+        )}
       </aside>
 
       {/* 2. Main Dashboard & Workspace Section */}
@@ -157,14 +192,18 @@ export default function App() {
         {/* Top Header Bar */}
         <header className="console-bar">
           <h2>
-            SYSTEM LOGS & EXTRACTED THREAT INTEL
+            {activeTab === 'contacts' ? 'KNOWN CONTACTS & WHITELIST MANAGER' : 'SYSTEM LOGS & EXTRACTED THREAT INTEL'}
           </h2>
           <div className="console-status" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--color-text-muted)' }}>
             STATUS: ACTIVE MONITORING ({alerts.length} Flagged)
           </div>
         </header>
 
-        {!selectedAttacker ? (
+        {activeTab === 'contacts' ? (
+          <div style={{ padding: '24px', overflowY: 'auto', height: '100%' }}>
+            <KnownContactsPanel />
+          </div>
+        ) : !selectedAttacker ? (
           <div className="empty-placeholder">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -286,13 +325,20 @@ export default function App() {
               </div>
 
               <div>
-                <h3 className="panel-section-title">Flagged Domains & Links</h3>
+                <h3 className="panel-section-title">Flagged Domains & Threat Enrichment</h3>
                 <div className="intel-card">
                   {selectedAttacker.links?.length > 0 ? (
                     selectedAttacker.links.map((link, i) => (
-                      <div key={i} className="link-item">
-                        <a href={link.url} target="_blank" rel="noopener noreferrer">{link.url}</a>
-                        <span className="link-domain">{link.domain}</span>
+                      <div key={i} className="link-item" style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <a href={link.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', wordBreak: 'break-all' }}>{link.url}</a>
+                          <span className="link-domain">{link.domain}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '10px', background: '#ef444422', color: '#ef4444', padding: '1px 6px', borderRadius: '3px', fontWeight: 600 }}>
+                            URLhaus / Phish Inspection Active
+                          </span>
+                        </div>
                       </div>
                     ))
                   ) : (
@@ -336,9 +382,25 @@ export default function App() {
 
             {/* Chat Panel: Multi-turn Dialogue Transcript */}
             <div className="chat-panel">
-              <div className="chat-header">
+              <div className="chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>CONVERSATION LOG (chatId: {selectedAttacker.associatedChats?.[0] || 'N/A'})</span>
-                <span style={{ color: 'var(--color-accent-blue)' }}>Kamla Devi Persona Activated</span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ 
+                    color: '#fff', 
+                    background: conversation?.activePersona === 'ROHAN_SHARMA' ? '#3b82f6' : (conversation?.activePersona === 'RAJESH_UNCLE' ? '#10b981' : '#f59e0b'),
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 700
+                  }}>
+                    Persona: {conversation?.activePersona || 'KAMLA_DEVI'}
+                  </span>
+                  {conversation?.simulatedHumanDelayMs > 0 && (
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                      ⏱️ {conversation.simulatedHumanDelayMs}ms delay
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="chat-history">
@@ -353,7 +415,9 @@ export default function App() {
                       className={`chat-bubble-container ${turn.role === 'attacker' ? 'attacker' : 'honeypot'}`}
                     >
                       <div className="chat-sender-label">
-                        {turn.role === 'attacker' ? (selectedAttacker.senderName || 'Attacker') : 'Kamla Devi (Honeypot)'}
+                        {turn.role === 'attacker' 
+                          ? (selectedAttacker.senderName || 'Attacker') 
+                          : `${conversation?.activePersona === 'ROHAN_SHARMA' ? 'Rohan Sharma' : (conversation?.activePersona === 'RAJESH_UNCLE' ? 'Rajesh Uncle' : 'Kamla Devi')} (Honeypot)`}
                       </div>
                       <div className="chat-bubble">
                         {turn.text}
@@ -374,3 +438,4 @@ export default function App() {
     </div>
   );
 }
+

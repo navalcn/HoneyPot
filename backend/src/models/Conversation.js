@@ -97,8 +97,24 @@ const conversationSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  activePersona: {
+    type: String,
+    default: 'KAMLA_DEVI'
+  },
+  scamCategory: {
+    type: String,
+    default: 'general_fraud'
+  },
+  simulatedHumanDelayMs: {
+    type: Number,
+    default: 0
+  },
   threatIntelligence: {
     type: threatIntelligenceSchema,
+    default: null
+  },
+  threatEnrichment: {
+    type: mongoose.Schema.Types.Mixed,
     default: null
   }
 }, {
