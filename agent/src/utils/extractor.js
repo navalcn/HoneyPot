@@ -1,52 +1,36 @@
 // Direct extraction caller using Groq (super fast JSON mode)
 async function callExtractor(messages) {
   const groqKey = process.env.GROQ_API_KEY;
-  const openRouterKey = process.env.OPEN_ROUTER_API_KEY;
 
   if (groqKey) {
     const modelToUse = process.env.GROQ_EXTRACT_MODEL || "openai/gpt-oss-20b";
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${groqKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: modelToUse,
-        messages,
-        temperature: 0.1,
-        response_format: { type: "json_object" }
-      })
-    });
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${groqKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: modelToUse,
+          messages,
+          temperature: 0.1,
+          response_format: { type: "json_object" }
+        })
+      });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.choices && data.choices.length > 0) {
-        return data.choices[0].message?.content || "{}";
+      if (res.ok) {
+        const data = await res.json();
+        if (data.choices && data.choices.length > 0) {
+          return data.choices[0].message?.content || "{}";
+        }
       }
+    } catch (e) {
+      // Regex fallback will capture all IOCs without hanging
     }
   }
 
-  if (openRouterKey) {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${openRouterKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "meta-llama/llama-3.1-8b-instruct",
-        messages,
-        temperature: 0.1
-      })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.choices?.[0]?.message?.content || "{}";
-    }
-  }
-
-  throw new Error("No valid LLM API key found for extraction.");
+  return "{}";
 }
 
 

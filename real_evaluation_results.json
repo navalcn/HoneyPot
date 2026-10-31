@@ -1,0 +1,69 @@
+{
+  "evaluatedAt": "2026-10-13T19:01:52.697Z",
+  "benchmark": {
+    "totalSamples": 80,
+    "tp": 55,
+    "tn": 25,
+    "fp": 0,
+    "fn": 0,
+    "accuracy": "100.00",
+    "precision": "100.00",
+    "recall": "100.00",
+    "f1": "100.00",
+    "personaAccuracy": "98.18",
+    "avgLatencyMs": 918,
+    "minLatencyMs": 302,
+    "maxLatencyMs": 2231
+  },
+  "liveSessions": [
+    {
+      "chatId": "real_tg_adversary_9901",
+      "senderName": "Discom Line Officer Sharma",
+      "turns": 4,
+      "upis": [
+        "powerdiscom.bill@sbi",
+        "electricity.emergency@hdfcbank"
+      ],
+      "links": [
+        "powerdiscom.bill@sbi",
+        "electricity.emergency@hdfcbank"
+      ]
+    },
+    {
+      "chatId": "real_tg_adversary_9902",
+      "senderName": "HR Ananya Recruitments",
+      "turns": 4,
+      "upis": [
+        "viptasks.reward@icici"
+      ],
+      "links": [
+        "https://youtube-brand-booster.biz/client9",
+        "https://youtube-brand-booster.biz/client9."
+      ]
+    },
+    {
+      "chatId": "real_tg_adversary_9903",
+      "senderName": "Crypto Arbitrage Master",
+      "turns": 4,
+      "upis": [
+        "cryptotrading88@icici"
+      ],
+      "links": [
+        "https://cryptotrading-vip.work",
+        "https://cryptotrading-vip.work.",
+        "cryptotrading88@icici"
+      ]
+    },
+    {
+      "chatId": "real_tg_adversary_9904",
+      "senderName": "Bank KYC Desk",
+      "turns": 4,
+      "upis": [
+        "kyc.verification.desk@axisbank"
+      ],
+      "links": [
+        "upi://pay?pa=kyc.verification.desk@axisbank"
+      ]
+    }
+  ]
+}

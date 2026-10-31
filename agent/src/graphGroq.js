@@ -62,8 +62,8 @@ export const AgentState = Annotation.Root({
   })
 });
 
-// Helper to call Groq API directly (Ultra-fast LPU inference, <500ms)
-export async function callGroq({ model, messages, temperature = 0.6 }) {
+// Helper to call Groq API directly (Ultra-fast LPU inference, <500ms) with 429 retry backoff
+export async function callGroq({ model, messages, temperature = 0.6 }, retries = 5) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new Error("GROQ_API_KEY environment variable is not defined in .env");
@@ -71,32 +71,42 @@ export async function callGroq({ model, messages, temperature = 0.6 }) {
 
   const modelToUse = model || process.env.GROQ_MAIN_MODEL || "openai/gpt-oss-20b";
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: modelToUse,
-      messages,
-      temperature,
-      response_format: { type: "json_object" }
-    })
-  });
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: modelToUse,
+        messages,
+        temperature,
+        response_format: { type: "json_object" }
+      })
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[Groq API Error ${response.status}]:`, errorText);
-    throw new Error(`Groq API returned ${response.status}: ${errorText}`);
+    if (response.status === 429) {
+      const backoff = 4000 + attempt * 1500;
+      console.warn(`[Groq Rate Limit 429] Waiting ${backoff}ms before retry attempt ${attempt + 1}/${retries}...`);
+      await new Promise(r => setTimeout(r, backoff));
+      continue;
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Groq API Error ${response.status}]:`, errorText);
+      throw new Error(`Groq API returned ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (!data.choices || data.choices.length === 0) {
+      throw new Error("Groq returned no choices in response");
+    }
+
+    return data.choices[0].message.content;
   }
-
-  const data = await response.json();
-  if (!data.choices || data.choices.length === 0) {
-    throw new Error("Groq returned no choices in response");
-  }
-
-  return data.choices[0].message.content;
+  throw new Error("Groq API rate limit exceeded after maximum retries");
 }
 
 // Helper to determine persona based on category or state
